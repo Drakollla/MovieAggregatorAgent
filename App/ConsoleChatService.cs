@@ -30,10 +30,11 @@ namespace MovieAgentCLI.Services
 
             var history = new ChatHistory();
             history.AddSystemMessage(
-                "Ты — эксперт-киноман. Твои правила:\n" +
-                "1. Если ты получил список фильмов, выведи его пользователю и спроси, о каком рассказать подробнее.\n" +
-                "2. Если пользователь выбрал фильм по номеру, найди его название в истории чата и вызови функцию поиска С ЭТИМ НАЗВАНИЕМ.\n" +
-                "3. Отвечай всегда на русском языке.");
+                "Ты — продвинутый кино-ассистент. \n" +
+                "У тебя есть два инструмента: \n" +
+                "1. MoviePlugin-SearchMovie — используй для поиска фактов о фильмах (сюжет, год).\n" +
+                "2. WebSearchPlugin-SearchOnline — используй для поиска НОВОСТЕЙ, дат выхода новых сезонов и того, чего может не быть в базе.\n" +
+                "Если тебя спрашивают о будущем или о последних новостях — иди в интернет!");
 
             var settings = new OpenAIPromptExecutionSettings
             {
@@ -56,7 +57,7 @@ namespace MovieAgentCLI.Services
                     var response = await chatService.GetChatMessageContentAsync(
                         history,
                         executionSettings: settings,
-                        kernel: _kernel, // Передаем ядро, чтобы модель могла вызывать плагины
+                        kernel: _kernel,
                         cancellationToken: stoppingToken
                     );
 

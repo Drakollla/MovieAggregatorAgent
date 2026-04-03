@@ -22,7 +22,9 @@ builder.Services.AddKernel()
         endpoint: new Uri("http://localhost:11434/v1"),
         apiKey: "ollama"
     )
-    .Plugins.AddFromType<MoviePlugin>();
+    .Plugins
+        .AddFromType<MoviePlugin>()
+        .AddFromType<WebSearchPlugin>();
 
 builder.Services.AddHostedService<ConsoleChatService>();
 
