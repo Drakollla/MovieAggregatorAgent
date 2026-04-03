@@ -3,11 +3,11 @@ using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure
 {
-    public class TmdbMovieService : IMovieService
+    public class KinopoiskService : IMovieService
     {
         private readonly HttpClient _httpClient;
 
-        public TmdbMovieService(HttpClient httpClient, IConfiguration config)
+        public KinopoiskService(HttpClient httpClient, IConfiguration config)
         {
             _httpClient = httpClient;
 
@@ -23,10 +23,7 @@ namespace Infrastructure
 
         public async Task<string> SearchMovieAsync(string query)
         {
-            // Эндпоинт поиска: /v1.4/movie/search?page=1&limit=10&query=...
-            // Док: https://kinopoisk.dev/documentation.html
             var url = $"v1.4/movie/search?page=1&limit=5&query={Uri.EscapeDataString(query)}";
-
             var response = await _httpClient.GetAsync(url);
 
             response.EnsureSuccessStatusCode();
