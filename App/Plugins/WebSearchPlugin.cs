@@ -11,11 +11,15 @@ namespace MovieAgentCLI.Plugins
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
 
-        public WebSearchPlugin(IConfiguration configuration)
+        public WebSearchPlugin(HttpClient httpClient, IConfiguration configuration)
         {
-            _httpClient = new HttpClient();
+            _httpClient = httpClient;
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36");
-            _apiKey = configuration["TavilyApiKey"] ?? "";
+            
+            var apiKey = configuration["ApiKeys:Tavily"]
+                ?? throw new ArgumentNullException("TavilyApiKey is not configured. Add it to user secrets.");
+
+            _apiKey = apiKey;
         }
 
         [KernelFunction]

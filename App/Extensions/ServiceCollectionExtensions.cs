@@ -3,7 +3,9 @@ using Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
+using MovieAgentCLI.Plugins;
 using MovieAgentCLI.Services;
+using MovieAgentCLI.Settings;
 
 namespace MovieAgentCLI.Extensions
 {
@@ -12,30 +14,30 @@ namespace MovieAgentCLI.Extensions
         public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration config)
         {
             services.AddHttpClient<IMovieService, KinopoiskService>();
+            services.AddHttpClient<WebSearchPlugin>();
+            services.AddHostedService<ConsoleChatService>();
 
-            var ollamaEndpoint = config["OllamaSettings:Endpoint"];
-            var ollamaModel = config["OllamaSettings:ModelId"];
-            var ollamaApiKey = config["ApiKeys:Ollama"];
+            return services;
+        }
 
-            var endpoint = config["OllamaSettings:Endpoint"];
-            var modelId = config["OllamaSettings:ModelId"];
-            var apiKey = config["ApiKeys:Ollama"];
+        public static IServiceCollection AddKernelWithOllama(this IServiceCollection services, IConfiguration config)
+        {
+            var ollamaSettings = config.GetSection("OllamaSettings").Get<OllamaSettings>() ?? new OllamaSettings();
+            var apiKey = config["ApiKeys:Ollama"] ?? "ollama";
 
             var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) };
             var httpClient = new HttpClient(handler)
             {
-                BaseAddress = new Uri(endpoint),
+                BaseAddress = new Uri(ollamaSettings.Endpoint),
                 Timeout = TimeSpan.FromMinutes(5)
             };
 
             services.AddKernel()
                 .AddOpenAIChatCompletion(
-                    modelId: modelId,
+                    modelId: ollamaSettings.ModelId,
                     apiKey: apiKey,
                     httpClient: httpClient
                 );
-
-            services.AddHostedService<ConsoleChatService>();
 
             return services;
         }
