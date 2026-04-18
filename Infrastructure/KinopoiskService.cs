@@ -20,6 +20,52 @@ namespace Infrastructure
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
         }
 
+        public async Task<string> SearchByCriteriaAsync(string? genre = null, 
+            int? yearFrom = null, int? 
+            yearTo = null, 
+            float? ratingMin = null, 
+            string? keyword = null)
+        {
+            var queryParams = new List<string>();
+
+            if(!string.IsNullOrEmpty(keyword))
+                queryParams.Add($"query={Uri.EscapeDataString(keyword)}");
+
+            if (yearFrom.HasValue && yearTo.HasValue)
+                queryParams.Add($"year={yearFrom}-{yearTo}");
+            else if (yearFrom.HasValue)
+                queryParams.Add($"year={yearFrom}");
+            else if (yearTo.HasValue)
+                queryParams.Add($"year={yearTo}");
+
+            if (ratingMin.HasValue)
+                queryParams.Add($"rating={ratingMin.Value}-10");
+
+            if (!string.IsNullOrEmpty(genre))
+                queryParams.Insert(0, $"query={Uri.EscapeDataString(genre + " " + (keyword ?? ""))}");
+
+            var url = $"v1.4/movie/search?page=1&limit=10&{string.Join("&", queryParams)}";
+
+            try
+            {
+                var response = await _httpClient.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+                return await response.Content.ReadAsStringAsync();
+            }
+            catch (HttpRequestException)
+            {
+                return JsonSerializer.Serialize(new { error = "Failed to connect to Kinopoisk server." });
+            }
+            catch (TaskCanceledException)
+            {
+                return JsonSerializer.Serialize(new { error = "Request timed out." });
+            }
+            catch (Exception)
+            {
+                return JsonSerializer.Serialize(new { error = "An error occurred." });
+            }
+        }
+
         public async Task<string> SearchMovieAsync(string query)
         {
             var url = $"v1.4/movie/search?page=1&limit=5&query={Uri.EscapeDataString(query)}";

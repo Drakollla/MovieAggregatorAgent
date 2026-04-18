@@ -30,23 +30,27 @@ namespace MovieAgentCLI.Services
 
             var history = new ChatHistory();
             history.AddSystemMessage(
-                "Ты — продвинутый кино-ассистент. \n" +
-                "У тебя есть два инструмента: \n" +
-                "1. MoviePlugin-SearchMovie — используй для поиска фактов о фильмах (сюжет, год).\n" +
-                "2. WebSearchPlugin-SearchOnline — используй для поиска НОВОСТЕЙ, дат выхода новых сезонов и того, чего может не быть в базе.\n" +
-                "Если тебя спрашивают о будущем или о последних новостях — иди в интернет!");
+                "Ты — продвинутый кино-ассистент.\n\n" +
+                "У тебя есть инструменты для поиска фильмов:\n" +
+                "1. SearchMovie — точный поиск по названию.\n" +
+                "2. SearchByCriteria — поиск по критериям (жанр, год, рейтинг).\n\n" +
+                "ВАЖНО: Когда пользователь описывает фильм словами — ОБЯЗАТЕЛЬНО вызови SearchByCriteria!\n\n" +
+                "Примеры:\n" +
+                "- 'мрачный триллер из 90-х с рейтингом 7+' → SearchByCriteria(genre='thriller', yearFrom=1990, yearTo=1999, ratingMin=7)\n" +
+                "- 'комедия 2020' → SearchByCriteria(genre='comedy', yearFrom=2020, yearTo=2020)\n\n" +
+                "Действуй по примеру выше!");
 
             var settings = new OpenAIPromptExecutionSettings
             {
                 ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-                Temperature = 0
+                Temperature = 0.2
             };
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 Console.Write("\nВы: ");
                 string? userInput = Console.ReadLine();
-                
+
                 if (string.IsNullOrWhiteSpace(userInput))
                     continue;
 
@@ -60,6 +64,8 @@ namespace MovieAgentCLI.Services
                         kernel: _kernel,
                         cancellationToken: stoppingToken
                     );
+
+                    _logger.LogInformation("LLM Response: {Content}", response.Content);
 
                     Console.WriteLine($"\nFilmAgent: {response.Content}");
 

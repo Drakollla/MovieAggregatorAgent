@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MovieAgentCLI.Extensions;
 using MovieAgentCLI.Services;
@@ -17,6 +18,7 @@ TaskScheduler.UnobservedTaskException += (sender, args) =>
 
 var builder = Host.CreateApplicationBuilder(args);
 
+builder.Configuration.AddUserSecrets<Program>();
 builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddKernelWithOllama(builder.Configuration);
 

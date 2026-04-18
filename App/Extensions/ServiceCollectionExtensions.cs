@@ -37,7 +37,10 @@ namespace MovieAgentCLI.Extensions
                     modelId: ollamaSettings.ModelId,
                     apiKey: apiKey,
                     httpClient: httpClient
-                );
+                )
+                .Plugins
+                   .AddFromType<MoviePlugin>()
+                   .AddFromType<WebSearchPlugin>();
 
             return services;
         }
