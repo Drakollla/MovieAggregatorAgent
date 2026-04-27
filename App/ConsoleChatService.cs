@@ -29,21 +29,20 @@ namespace MovieAgentCLI.Services
             var chatService = _kernel.GetRequiredService<IChatCompletionService>();
 
             var history = new ChatHistory();
-            history.AddSystemMessage(
-                "Ты — продвинутый кино-ассистент.\n\n" +
-                "У тебя есть инструменты для поиска фильмов:\n" +
-                "1. SearchMovie — точный поиск по названию.\n" +
-                "2. SearchByCriteria — поиск по критериям (жанр, год, рейтинг).\n\n" +
-                "ВАЖНО: Когда пользователь описывает фильм словами — ОБЯЗАТЕЛЬНО вызови SearchByCriteria!\n\n" +
-                "Примеры:\n" +
-                "- 'мрачный триллер из 90-х с рейтингом 7+' → SearchByCriteria(genre='thriller', yearFrom=1990, yearTo=1999, ratingMin=7)\n" +
-                "- 'комедия 2020' → SearchByCriteria(genre='comedy', yearFrom=2020, yearTo=2020)\n\n" +
-                "Действуй по примеру выше!");
+
+            history.AddSystemMessage(@"You are an AI assistant. You must use tools to answer questions.
+                You have access to the following tool:
+                - Name: WebSearchPlugin-SearchOnline
+                - Parameter: query (string)
+
+                INSTRUCTIONS:
+                If the user asks about factual information, Oscars, actors, or movie details, YOU MUST CALL the tool 'WebSearchPlugin-SearchOnline' to search Google.
+                Do not write any text. Only generate the tool call.");
 
             var settings = new OpenAIPromptExecutionSettings
             {
                 ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,
-                Temperature = 0.2
+                Temperature = 0
             };
 
             while (!stoppingToken.IsCancellationRequested)
@@ -64,8 +63,6 @@ namespace MovieAgentCLI.Services
                         kernel: _kernel,
                         cancellationToken: stoppingToken
                     );
-
-                    _logger.LogInformation("LLM Response: {Content}", response.Content);
 
                     Console.WriteLine($"\nFilmAgent: {response.Content}");
 

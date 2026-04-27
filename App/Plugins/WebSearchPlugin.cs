@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 
 namespace MovieAgentCLI.Plugins
@@ -11,59 +11,49 @@ namespace MovieAgentCLI.Plugins
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
 
-        public WebSearchPlugin(HttpClient httpClient, IConfiguration configuration)
+        public WebSearchPlugin(HttpClient httpClient, IConfiguration config)
         {
             _httpClient = httpClient;
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36");
-            
-            var apiKey = configuration["ApiKeys:Tavily"]
-                ?? throw new ArgumentNullException("TavilyApiKey is not configured. Add it to user secrets.");
-
-            _apiKey = apiKey;
+            _apiKey = config["ApiKeys:Serper"] ?? throw new ArgumentNullException("Serper API Key is missing");
         }
 
         [KernelFunction]
-        [Description("Поиск в реальном интернете для получения свежих новостей кино и дат выхода.")]
-        public async Task<string> SearchOnline([Description("Запрос для поиска")] string query)
+        [Description("Поиск в интернете. Используй для поиска свежих новостей, фактов (кто получил Оскар) и дат выхода фильмов.")]
+        public async Task<string> SearchOnline([Description("Поисковый запрос")] string query)
         {
-            if (string.IsNullOrEmpty(_apiKey))
-                return "Ошибка: Ключ API не настроен.";
-
             try
             {
-                var requestData = new
-                {
-                    api_key = _apiKey,
-                    query = query,
-                    search_depth = "basic",
-                    max_results = 3
-                };
+                var request = new HttpRequestMessage(HttpMethod.Post, "https://google.serper.dev/search");
+                request.Headers.Add("X-API-KEY", _apiKey);
 
-                var response = await _httpClient.PostAsJsonAsync("https://api.tavily.com/search", requestData);
+                var payload = new { q = query, gl = "ru", hl = "ru" };
+                request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
 
                 if (!response.IsSuccessStatusCode)
+                    return "Ошибка поиска в интернете.";
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("organic", out var items) && items.GetArrayLength() > 0)
                 {
-                    var errBody = await response.Content.ReadAsStringAsync();
-                    return "Ошибка поиска: сервис отклонил запрос.";
-                }
+                    var summary = "Результаты поиска в интернете:\n";
 
-                var result = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-                if (result.TryGetProperty("results", out var results) && results.GetArrayLength() > 0)
-                {
-                    var summary = "Свежая информация из интернета:\n";
-
-                    foreach (var item in results.EnumerateArray())
+                    for (int i = 0; i < Math.Min(items.GetArrayLength(), 3); i++)
                     {
-                        string title = item.GetProperty("title").GetString() ?? "";
-                        string content = item.GetProperty("content").GetString() ?? "";
-                        summary += $"- {title}\n  Суть: {content}\n\n";
-                    }
+                        var item = items[i];
+                        string title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                        string snippet = item.TryGetProperty("snippet", out var s) ? s.GetString() ?? "" : "";
 
+                        summary += $"- {title}\n  {snippet}\n\n";
+                    }
                     return summary;
                 }
 
-                return "Информации пока нет.";
+                return "Новостей по этому запросу не найдено.";
             }
             catch (Exception ex)
             {

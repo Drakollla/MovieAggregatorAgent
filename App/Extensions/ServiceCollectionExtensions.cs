@@ -1,4 +1,4 @@
-﻿using Contracts;
+using Contracts;
 using Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
