@@ -1,5 +1,4 @@
-﻿using Contracts;
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -10,16 +9,13 @@ namespace MovieAgentCLI.Services
     public class ConsoleChatService : BackgroundService
     {
         private readonly Kernel _kernel;
-        private readonly IMovieService _movieService;
         private readonly ILogger<ConsoleChatService> _logger;
 
         public ConsoleChatService(
             Kernel kernel,
-            IMovieService movieService,
             ILogger<ConsoleChatService> logger)
         {
             _kernel = kernel;
-            _movieService = movieService;
             _logger = logger;
         }
 
@@ -64,6 +60,7 @@ namespace MovieAgentCLI.Services
                         cancellationToken: stoppingToken
                     );
 
+                    Console.ForegroundColor = ConsoleColor.Green;
                     Console.WriteLine($"\nFilmAgent: {response.Content}");
 
                     history.AddAssistantMessage(response.Content!);
@@ -71,7 +68,9 @@ namespace MovieAgentCLI.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Ошибка чата");
+                    Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("Произошла ошибка, попробуйте еще раз.");
+                    Console.ResetColor();
                 }
             }
         }

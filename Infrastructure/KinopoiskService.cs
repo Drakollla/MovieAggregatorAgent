@@ -6,15 +6,17 @@ namespace Infrastructure
 {
     public class KinopoiskService : IMovieService
     {
+        private const string KinopoiskBaseUrl = "https://api.kinopoisk.dev/";
+
         private readonly HttpClient _httpClient;
 
         public KinopoiskService(HttpClient httpClient, IConfiguration config)
         {
             _httpClient = httpClient;
-            _httpClient.BaseAddress = new Uri("https://api.kinopoisk.dev/");
+            _httpClient.BaseAddress = new Uri(KinopoiskBaseUrl);
 
             var token = config["ApiKeys:Tmdb"]
-                        ?? throw new ArgumentNullException("API Token not found");
+                ?? throw new ArgumentNullException("API Token not found");
 
             _httpClient.DefaultRequestHeaders.Add("X-API-Key", token);
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
@@ -22,33 +24,56 @@ namespace Infrastructure
 
         public async Task<string> SearchMovieAsync(string query)
         {
-            var url = $"v1.4/movie/search?page=1&limit=5&query={Uri.EscapeDataString(query)}";
+            string url = $"v1.4/movie/search?page=1&limit=5&query={Uri.EscapeDataString(query)}";
 
+            return await GetAsync(url);
+        }
+
+        public async Task<string> GetMovieByIdAsync(int id)
+        {
+            string url = $"v1.4/movie/{id}";
+
+            return await GetAsync(url);
+        }
+
+        public async Task<string> SearchByCriteriaAsync(
+            string? genre = null, int? yearFrom = null,
+            int? yearTo = null, float? ratingMin = null,
+            string? keyword = null)
+        {
+            string queryParams = BuildCriteriaQuery(genre, yearFrom, yearTo, ratingMin);
+            string url = $"v1.4/movie?page=1&limit=20&{queryParams}&sortField=votes.kp&sortType=-1";
+
+            return await GetAsync(url);
+        }
+
+        private async Task<string> GetAsync(string url)
+        {
             try
             {
                 var response = await _httpClient.GetAsync(url);
                 response.EnsureSuccessStatusCode();
+
                 return await response.Content.ReadAsStringAsync();
             }
-            catch (HttpRequestException ex)
+            catch (HttpRequestException)
             {
-                return JsonSerializer.Serialize(new { error = "Failed to connect to Kinopoisk server. Check your internet connection." });
+                return CreateErrorJson("Failed to connect to Kinopoisk server. Check your internet connection.");
             }
             catch (TaskCanceledException)
             {
-                return JsonSerializer.Serialize(new { error = "Request timed out. Please try again." });
+                return CreateErrorJson("Request timed out. Please try again.");
             }
             catch (Exception ex)
             {
-                return JsonSerializer.Serialize(new { error = "An error occurred while searching for movies." });
+                return CreateErrorJson($"An error occurred: {ex.Message}");
             }
         }
 
-        public async Task<string> SearchByCriteriaAsync(string? genre = null,
-            int? yearFrom = null,
-            int? yearTo = null,
-            float? ratingMin = null,
-            string? keyword = null)
+        private static string CreateErrorJson(string message) =>
+            JsonSerializer.Serialize(new { error = message });
+
+        private static string BuildCriteriaQuery(string? genre, int? yearFrom, int? yearTo, float? ratingMin)
         {
             var queryParams = new List<string>();
 
@@ -71,42 +96,7 @@ namespace Infrastructure
                 queryParams.Add($"genres.name={Uri.EscapeDataString(genresList[0].ToLower())}");
             }
 
-            var url = $"v1.4/movie?page=1&limit=20&{string.Join("&", queryParams)}&sortField=votes.kp&sortType=-1";
-
-            try
-            {
-                var response = await _httpClient.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync();
-            }
-            catch (Exception ex)
-            {
-                return JsonSerializer.Serialize(new { error = ex.Message });
-            }
-        }
-
-        public async Task<string> GetMovieByIdAsync(int id)
-        {
-            var url = $"v1.4/movie/{id}";
-
-            try
-            {
-                var response = await _httpClient.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-                return await response.Content.ReadAsStringAsync();
-            }
-            catch (HttpRequestException)
-            {
-                return JsonSerializer.Serialize(new { error = "Failed to connect to Kinopoisk server." });
-            }
-            catch (TaskCanceledException)
-            {
-                return JsonSerializer.Serialize(new { error = "Request timed out." });
-            }
-            catch (Exception)
-            {
-                return JsonSerializer.Serialize(new { error = "An error occurred." });
-            }
+            return string.Join("&", queryParams);
         }
     }
 }
