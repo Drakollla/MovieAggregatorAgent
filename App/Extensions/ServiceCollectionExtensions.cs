@@ -40,7 +40,8 @@ namespace MovieAgentCLI.Extensions
                 )
                 .Plugins
                    .AddFromType<MoviePlugin>()
-                   .AddFromType<WebSearchPlugin>();
+                   .AddFromType<WebSearchPlugin>()
+                   .AddFromType<CalendarPlugin>(); ;
 
             return services;
         }

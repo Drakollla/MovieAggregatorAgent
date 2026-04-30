@@ -8,9 +8,8 @@ namespace MovieAgentCLI.Plugins
 {
     public class MoviePlugin
     {
-        private const int MaxCriteriaResults = 5;
-        private const int MaxSimilarResults = 10;
-        private const int MaxDescriptionLength = 500;
+        public const int MaxDescriptionLength = 500;
+        public const int MaxCriteriaResults = 5;
         private const string KinopoiskBaseUrl = "https://www.kinopoisk.ru/film/";
 
         private readonly IMovieService _movieService;
@@ -21,8 +20,8 @@ namespace MovieAgentCLI.Plugins
         }
 
         [KernelFunction]
-        [Description("Получить информацию о фильме из Кинопоиска.")]
-        public async Task<string> SearchMovie([Description("Название фильма")] string query)
+        [Description("Get detailed information about a specific movie from Kinopoisk.")]
+        public async Task<string> SearchMovie([Description("Movie title")] string query)
         {
             query = ExtractQueryFromJsonFallback(query);
 
@@ -39,13 +38,13 @@ namespace MovieAgentCLI.Plugins
         }
 
         [KernelFunction]
-        [Description("Поиск фильмов по точным критериям: по жанру, году или рейтингу.")]
+        [Description("Search for movies by exact criteria (genres, year, rating). Use this when the user asks for recommendations by genre or year.")]
         public async Task<string> SearchByCriteria(
-                    [Description("Жанры фильма на русском языке через запятую (например: фантастика, боевик).")] string? genre = null,
-                    [Description("Начальный год")] int? yearFrom = null,
-                    [Description("Конечный год")] int? yearTo = null,
-                    [Description("Минимальный рейтинг от 1 до 10")] float? ratingMin = null,
-                    [Description("Ключевые слова для поиска по сюжету")] string? keyword = null)
+                    [Description("Comma-separated genres in Russian (e.g., 'фантастика, боевик, комедия').")] string? genre = null,
+                    [Description("Start year (e.g., 1990)")] int? yearFrom = null,
+                    [Description("End year (e.g., 1999)")] int? yearTo = null,
+                    [Description("Minimum rating from 1 to 10 (e.g., 7.5)")] float? ratingMin = null,
+                    [Description("Keywords for plot search")] string? keyword = null)
         {
             if (string.IsNullOrEmpty(genre) && !yearFrom.HasValue &&
                 !yearTo.HasValue && !ratingMin.HasValue &&
@@ -65,8 +64,8 @@ namespace MovieAgentCLI.Plugins
 
 
         [KernelFunction]
-        [Description("Найти похожие фильмы. Использовать, когда пользователь просит найти что-то похожее на конкретный фильм.")]
-        public async Task<string> FindSimilar([Description("Название фильма")] string movieTitle)
+        [Description("Find movies similar to a specific movie. Use this when the user asks 'recommend something similar to...'")]
+        public async Task<string> FindSimilar([Description("Movie title")] string movieTitle)
         {
             try
             {
@@ -91,7 +90,6 @@ namespace MovieAgentCLI.Plugins
         }
 
         #region Helpers
-
         private async Task<(JsonElement? element, int id, string name, int year)> GetBaseMovieAsync(string title)
         {
             string searchJson = await _movieService.SearchMovieAsync(title);
@@ -120,7 +118,7 @@ namespace MovieAgentCLI.Plugins
         private static bool HasAllGenres(JsonElement movie, List<string> requiredGenres)
         {
             var movieGenres = movie.TryGetProperty("genres", out var gProp)
-                ? gProp.EnumerateArray().Select(g => g.TryGetProperty("name", out var n) 
+                ? gProp.EnumerateArray().Select(g => g.TryGetProperty("name", out var n)
                     ? n.GetString()?.ToLower() ?? "" : "").ToList()
                 : [];
 
@@ -272,7 +270,7 @@ namespace MovieAgentCLI.Plugins
 
                 AppendFormattedSimilarMovie(output, movie, name, kpId, ref count);
 
-                if (count >= MaxSimilarResults)
+                if (count >= MaxCriteriaResults)
                     break;
             }
 
