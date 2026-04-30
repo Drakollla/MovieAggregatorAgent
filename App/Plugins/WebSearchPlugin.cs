@@ -24,7 +24,7 @@ namespace MovieAgentCLI.Plugins
         }
 
         [KernelFunction]
-        [Description("Поиск в интернете. Используй для поиска свежих новостей, фактов (кто получил Оскар) и дат выхода фильмов.")]
+        [Description("Internet search. Use it to find the latest news, facts (like Oscar winners), and movie release dates.")]
         public async Task<string> SearchOnline([Description("Точный поисковый запрос")] string query)
         {
             try
