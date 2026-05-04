@@ -8,8 +8,8 @@ namespace MovieAgentCLI.Plugins
 {
     public class MoviePlugin
     {
-        public const int MaxDescriptionLength = 500;
-        public const int MaxCriteriaResults = 5;
+        public const int MaxDescriptionLength = 250;
+        public const int MaxResults = 3;
         private const string KinopoiskBaseUrl = "https://www.kinopoisk.ru/film/";
 
         private readonly IMovieService _movieService;
@@ -34,17 +34,17 @@ namespace MovieAgentCLI.Plugins
 
             var (name, year, rating, description, kpId) = ExtractMovieInfo(bestMatch.Value);
 
-            return $"Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/";
+            return $"ДАННЫЕ ИЗ БАЗЫ: Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/";
         }
 
         [KernelFunction]
         [Description("Search for movies by exact criteria (genres, year, rating). Use this when the user asks for recommendations by genre or year.")]
         public async Task<string> SearchByCriteria(
-                    [Description("Comma-separated genres in Russian (e.g., 'фантастика, боевик, комедия').")] string? genre = null,
-                    [Description("Start year (e.g., 1990)")] int? yearFrom = null,
-                    [Description("End year (e.g., 1999)")] int? yearTo = null,
-                    [Description("Minimum rating from 1 to 10 (e.g., 7.5)")] float? ratingMin = null,
-                    [Description("Keywords for plot search")] string? keyword = null)
+            [Description("Comma-separated genres in Russian (e.g., 'фантастика, боевик, комедия').")] string? genre = null,
+            [Description("Start year (e.g., 1990)")] int? yearFrom = null,
+            [Description("End year (e.g., 1999)")] int? yearTo = null,
+            [Description("Minimum rating from 1 to 10 (e.g., 7.5)")] float? ratingMin = null,
+            [Description("Keywords for plot search")] string? keyword = null)
         {
             if (string.IsNullOrEmpty(genre) && !yearFrom.HasValue &&
                 !yearTo.HasValue && !ratingMin.HasValue &&
@@ -61,7 +61,6 @@ namespace MovieAgentCLI.Plugins
 
             return BuildCriteriaResponse(docs, ParseGenres(genre));
         }
-
 
         [KernelFunction]
         [Description("Find movies similar to a specific movie. Use this when the user asks 'recommend something similar to...'")]
@@ -90,6 +89,7 @@ namespace MovieAgentCLI.Plugins
         }
 
         #region Helpers
+
         private async Task<(JsonElement? element, int id, string name, int year)> GetBaseMovieAsync(string title)
         {
             string searchJson = await _movieService.SearchMovieAsync(title);
@@ -225,21 +225,24 @@ namespace MovieAgentCLI.Plugins
 
         private static string BuildCriteriaResponse(JsonElement docs, List<string> requiredGenres)
         {
-            var output = new StringBuilder("Найденные фильмы:\n");
+            var output = new StringBuilder("ДАННЫЕ ИЗ БАЗЫ:\n");
             int count = 0;
 
-            foreach (var element in docs.EnumerateArray())
+            var rnd = new Random();
+            var shuffledDocs = docs.EnumerateArray().OrderBy(x => rnd.Next()).ToList();
+
+            foreach (var element in shuffledDocs)
             {
                 if (requiredGenres.Count > 0 && !HasAllGenres(element, requiredGenres))
                     continue;
 
                 AppendFormattedMovie(output, element);
 
-                if (++count >= MaxCriteriaResults)
+                if (++count >= MaxResults)
                     break;
             }
 
-            return count > 0 ? output.ToString() : "По вашим критериям (с учетом проверки жанров) ничего не найдено.";
+            return count > 0 ? output.ToString() : "По вашим критериям (с учетом проверки жанров) ничего не найдено в базе.";
         }
 
         private static void AppendFormattedMovie(StringBuilder output, JsonElement element)
@@ -270,7 +273,7 @@ namespace MovieAgentCLI.Plugins
 
                 AppendFormattedSimilarMovie(output, movie, name, kpId, ref count);
 
-                if (count >= MaxCriteriaResults)
+                if (count >= MaxResults)
                     break;
             }
 
@@ -289,7 +292,7 @@ namespace MovieAgentCLI.Plugins
             output.AppendLine($"{count}. {name}{yearStr}");
 
             if (kpId > 0)
-                output.AppendLine($"   Где посмотреть: {KinopoiskBaseUrl}{kpId}/");
+                output.AppendLine($"   Где смотреть: {KinopoiskBaseUrl}{kpId}/");
 
             output.AppendLine();
         }

@@ -12,7 +12,7 @@ namespace MovieAgentCLI.Services
         private readonly ILogger<ConsoleChatService> _logger;
         private readonly IChatCompletionService _chatService;
 
-        private const int MaxHistoryMessages = 10;
+        private const int MaxHistoryMessages = 4;
 
         public ConsoleChatService(Kernel kernel, ILogger<ConsoleChatService> logger)
         {

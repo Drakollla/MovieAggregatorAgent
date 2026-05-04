@@ -7,13 +7,16 @@ namespace Infrastructure
     public class KinopoiskService : IMovieService
     {
         private const string KinopoiskBaseUrl = "https://api.kinopoisk.dev/";
+        private const int FutureYearsOffset = 10;
 
         private readonly HttpClient _httpClient;
+        private readonly Random _random;
 
         public KinopoiskService(HttpClient httpClient, IConfiguration config)
         {
             _httpClient = httpClient;
             _httpClient.BaseAddress = new Uri(KinopoiskBaseUrl);
+            _random = new Random();
 
             var token = config["ApiKeys:Tmdb"]
                 ?? throw new ArgumentNullException("API Token not found");
@@ -25,14 +28,12 @@ namespace Infrastructure
         public async Task<string> SearchMovieAsync(string query)
         {
             string url = $"v1.4/movie/search?page=1&limit=5&query={Uri.EscapeDataString(query)}";
-
             return await GetAsync(url);
         }
 
         public async Task<string> GetMovieByIdAsync(int id)
         {
             string url = $"v1.4/movie/{id}";
-
             return await GetAsync(url);
         }
 
@@ -42,7 +43,8 @@ namespace Infrastructure
             string? keyword = null)
         {
             string queryParams = BuildCriteriaQuery(genre, yearFrom, yearTo, ratingMin);
-            string url = $"v1.4/movie?page=1&limit=20&{queryParams}&sortField=votes.kp&sortType=-1";
+            int randomPage = _random.Next(1, 4);
+            string url = $"v1.4/movie?page={randomPage}&limit=20&{queryParams}&sortField=votes.kp&sortType=-1";
 
             return await GetAsync(url);
         }
@@ -78,11 +80,18 @@ namespace Infrastructure
             var queryParams = new List<string>();
 
             if (yearFrom.HasValue && yearTo.HasValue)
+            {
                 queryParams.Add($"year={yearFrom}-{yearTo}");
+            }
             else if (yearFrom.HasValue)
-                queryParams.Add($"year={yearFrom}-2030");
+            {
+                int futureYear = DateTime.Now.Year + FutureYearsOffset;
+                queryParams.Add($"year={yearFrom}-{futureYear}");
+            }
             else if (yearTo.HasValue)
+            {
                 queryParams.Add($"year=1890-{yearTo}");
+            }
 
             if (ratingMin.HasValue)
             {

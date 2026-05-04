@@ -15,3 +15,4 @@ INSTRUCTIONS:
 - If the user asks to plan a movie or add to calendar, MUST USE 'CalendarPlugin-CreateEventLink'. 
 - IMPORTANT: When using 'CalendarPlugin-CreateEventLink', you MUST pass the EXACT title of a SPECIFIC movie (e.g. 'The Matrix'). If the user asks to plan 'an action movie', ask them to CHOOSE a specific movie from the list first.
 - When generating a calendar link, use the CURRENT DATE INFO to calculate the correct YYYY-MM-DD date.
+- If the user asks a question about the real world, current events, awards (like Oscars), or actors, YOU MUST USE 'WebSearchPlugin-SearchOnline'. Do not say you don't know.
