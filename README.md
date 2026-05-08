@@ -10,7 +10,7 @@
 * **Kinopoisk API v1.4**
 
 ## Реализованные фичи (Agent Skills)
-* `SearchMovie` & `SearchByCriteria` — поиск сюжетов и фильтрация фильмов с обходом ограничений API (Broad Fetch + Local Filter).
+* `SearchMovie` & `SearchByCriteria` — поиск сюжетов и фильтрация фильмов.
 * `FindSimilar` — поиск похожих фильмов на основе графов рекомендаций.
 * `CalendarPlanner` — генерация `.ics` / Google Calendar ссылок для планирования просмотров. Агент вычисляет текущую дату, получает длительность фильма из базы и планирует время события.
 
