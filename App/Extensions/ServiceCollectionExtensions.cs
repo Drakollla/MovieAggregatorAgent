@@ -1,11 +1,11 @@
 using Contracts;
-using Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using MovieAgentCLI.Plugins;
 using MovieAgentCLI.Services;
 using MovieAgentCLI.Settings;
+using Telegram.Bot;
 
 namespace MovieAgentCLI.Extensions
 {
@@ -15,7 +15,14 @@ namespace MovieAgentCLI.Extensions
         {
             services.AddHttpClient<IMovieService, KinopoiskService>();
             services.AddHttpClient<WebSearchPlugin>();
-            services.AddHostedService<ConsoleChatService>();
+
+            string telegramToken = config["ApiKeys:Telegram"]
+                ?? throw new InvalidOperationException("Токен Telegram не найден в конфигурации (ApiKeys:Telegram).");
+
+            services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
+            services.AddHostedService<TelegramChatService>();
+
+            //services.AddHostedService<ConsoleChatService>();
 
             return services;
         }
