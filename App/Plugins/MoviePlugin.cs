@@ -34,7 +34,7 @@ namespace MovieAgentCLI.Plugins
 
             var (name, year, rating, description, kpId) = ExtractMovieInfo(bestMatch.Value);
 
-            return $"ДАННЫЕ ИЗ БАЗЫ: Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/";
+            return $"ДАННЫЕ ИЗ БАЗЫ: Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/\n[MOVIE:{kpId}]";
         }
 
         [KernelFunction]
@@ -85,6 +85,36 @@ namespace MovieAgentCLI.Plugins
             catch (Exception ex)
             {
                 return $"Произошла ошибка при поиске похожих фильмов: {ex.Message}";
+            }
+        }
+
+        [KernelFunction]
+        [Description("Get detailed movie information by Kinopoisk ID.")]
+        public async Task<string> GetMovieDetails([Description("Kinopoisk movie ID")] int movieId)
+        {
+            try
+            {
+                string json = await _movieService.GetMovieByIdAsync(movieId);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "Без названия" : "Без названия";
+                var year = root.TryGetProperty("year", out var y) ? y.GetInt32() : 0;
+                var rating = root.TryGetProperty("rating", out var r) && r.TryGetProperty("kp", out var kp) ? (float)kp.GetDouble() : 0;
+                var description = root.TryGetProperty("description", out var d) ? d.GetString() ?? "Нет описания" : "Нет описания";
+
+                if (description.Length > MaxDescriptionLength)
+                    description = description[..MaxDescriptionLength] + "... (сюжет обрезан)";
+
+                var genres = root.TryGetProperty("genres", out var g)
+                    ? string.Join(", ", g.EnumerateArray().Select(x => x.TryGetProperty("name", out var gn) ? gn.GetString() ?? "" : "").Where(x => !string.IsNullOrEmpty(x)))
+                    : "Неизвестно";
+
+                return $"🎬 {name} ({year})\n⭐ Рейтинг: {rating:F1}\n🎭 Жанры: {genres}\n📝 Сюжет: {description}\n🔗 {KinopoiskBaseUrl}{movieId}/\n[MOVIE:{movieId}]";
+            }
+            catch (Exception ex)
+            {
+                return $"Ошибка при получении информации о фильме: {ex.Message}";
             }
         }
 
@@ -226,6 +256,7 @@ namespace MovieAgentCLI.Plugins
         private static string BuildCriteriaResponse(JsonElement docs, List<string> requiredGenres)
         {
             var output = new StringBuilder("ДАННЫЕ ИЗ БАЗЫ:\n");
+            var movieIds = new List<int>();
             int count = 0;
 
             var rnd = new Random();
@@ -236,13 +267,20 @@ namespace MovieAgentCLI.Plugins
                 if (requiredGenres.Count > 0 && !HasAllGenres(element, requiredGenres))
                     continue;
 
+                var (_, _, _, _, kpId) = ExtractMovieInfo(element);
+                movieIds.Add(kpId);
                 AppendFormattedMovie(output, element);
 
                 if (++count >= MaxResults)
                     break;
             }
 
-            return count > 0 ? output.ToString() : "По вашим критериям (с учетом проверки жанров) ничего не найдено в базе.";
+            var result = count > 0 ? output.ToString() : "По вашим критериям (с учетом проверки жанров) ничего не найдено в базе.";
+            
+            if (movieIds.Count > 0)
+                result += $"\n[MOVIES:{string.Join(",", movieIds)}]";
+            
+            return result;
         }
 
         private static void AppendFormattedMovie(StringBuilder output, JsonElement element)
@@ -262,6 +300,7 @@ namespace MovieAgentCLI.Plugins
             var franchiseIds = ExtractFranchiseIds(fullRoot);
             string baseName = GetBaseFranchiseName(sourceName);
             var seenFranchises = new HashSet<string>();
+            var movieIds = new List<int>();
 
             var output = new StringBuilder($"Рекомендации Кинопоиска! Фильмы в духе «{sourceName}» ({sourceYear}):\n\n");
             int count = 0;
@@ -271,13 +310,19 @@ namespace MovieAgentCLI.Plugins
                 if (IsDuplicateOrFranchise(movie, franchiseIds, baseName, seenFranchises, out string name, out int kpId))
                     continue;
 
+                movieIds.Add(kpId);
                 AppendFormattedSimilarMovie(output, movie, name, kpId, ref count);
 
                 if (count >= MaxResults)
                     break;
             }
 
-            return count > 0 ? output.ToString() : $"Для фильма «{sourceName}» не нашлось независимых похожих фильмов.";
+            var result = count > 0 ? output.ToString() : $"Для фильма «{sourceName}» не нашлось независимых похожих фильмов.";
+            
+            if (movieIds.Count > 0)
+                result += $"\n[MOVIES:{string.Join(",", movieIds)}]";
+            
+            return result;
         }
 
         private static void AppendFormattedSimilarMovie(StringBuilder output,

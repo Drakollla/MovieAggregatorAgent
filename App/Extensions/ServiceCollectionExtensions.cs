@@ -17,11 +17,10 @@ namespace MovieAgentCLI.Extensions
             services.AddHttpClient<WebSearchPlugin>();
 
             string telegramToken = config["ApiKeys:Telegram"]
-                ?? throw new InvalidOperationException("Токен Telegram не найден в конфигурации (ApiKeys:Telegram).");
+                ?? throw new InvalidOperationException("РўРѕРєРµРЅ Telegram РЅРµ РЅР°Р№РґРµРЅ РІ РєРѕРЅС„РёРіСѓСЂР°С†РёРё (ApiKeys:Telegram).");
 
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
             services.AddHostedService<TelegramChatService>();
-
             //services.AddHostedService<ConsoleChatService>();
 
             return services;

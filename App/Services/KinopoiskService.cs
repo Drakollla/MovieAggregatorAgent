@@ -6,7 +6,8 @@ namespace MovieAgentCLI.Services
 {
     public class KinopoiskService : IMovieService
     {
-        private const string KinopoiskBaseUrl = "https://api.kinopoisk.dev/";
+        //private const string KinopoiskBaseUrl = "https://api.kinopoisk.dev/";
+        private const string KinopoiskBaseUrl = "https://api.poiskkino.dev/";
         private const int FutureYearsOffset = 10;
 
         private readonly HttpClient _httpClient;
@@ -21,8 +22,8 @@ namespace MovieAgentCLI.Services
             var token = config["ApiKeys:Tmdb"]
                 ?? throw new ArgumentNullException("API Token not found");
 
-            _httpClient.DefaultRequestHeaders.Add("X-API-Key", token);
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+            _httpClient.DefaultRequestHeaders.Add("X-API-Key", token);
         }
 
         public async Task<string> SearchMovieAsync(string query)
@@ -44,7 +45,7 @@ namespace MovieAgentCLI.Services
         {
             string queryParams = BuildCriteriaQuery(genre, yearFrom, yearTo, ratingMin);
             int randomPage = _random.Next(1, 4);
-            string url = $"v1.4/movie?page={randomPage}&limit=20&{queryParams}&sortField=votes.kp&sortType=-1";
+            string url = $"v1.4/movie?page={randomPage}&limit=10&{queryParams}&sortField=votes.kp&sortType=-1";
 
             return await GetAsync(url);
         }
@@ -53,8 +54,16 @@ namespace MovieAgentCLI.Services
         {
             try
             {
+
                 var response = await _httpClient.GetAsync(url);
-                response.EnsureSuccessStatusCode();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Ошибка API (Статус: {response.StatusCode}): {errorContent}");
+
+                    return errorContent;
+                }
 
                 return await response.Content.ReadAsStringAsync();
             }

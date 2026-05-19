@@ -4,8 +4,10 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace MovieAgentCLI.Services
 {
@@ -16,7 +18,15 @@ namespace MovieAgentCLI.Services
         private readonly IChatCompletionService _chatService;
         private readonly ITelegramBotClient _botClient;
 
+        private static readonly System.Text.RegularExpressions.Regex CalendarLinkRegex = new(@"\[.*?\]\((https://calendar\.google\.com[^\)]+)\)", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly System.Text.RegularExpressions.Regex KinopoiskLinkRegex = new(@"https://(?:www\.)?kinopoisk\.ru/(?:film|series)/\d+/?", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly System.Text.RegularExpressions.Regex LeftoverTextRegex = new(@"(?i)(Где смотреть|Где посмотреть|Ссылка)[\s:]*", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly System.Text.RegularExpressions.Regex MultipleNewlinesRegex = new(@"\n{3,}", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly System.Text.RegularExpressions.Regex MoviesTagRegex = new(@"\[MOVIES:(\d+(?:,\d+)*)\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly System.Text.RegularExpressions.Regex MovieTagRegex = new(@"\[MOVIE:(\d+)\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
         private const int MaxHistoryMessages = 4;
+        private const string MovieCallbackPrefix = "movie:";
 
         public TelegramChatService(Kernel kernel, ILogger<TelegramChatService> logger, ITelegramBotClient botClient)
         {
@@ -68,6 +78,12 @@ namespace MovieAgentCLI.Services
 
         private async Task ProcessUpdateAsync(Update update, ChatHistory history, OpenAIPromptExecutionSettings settings, CancellationToken cancellationToken)
         {
+            if (update.CallbackQuery is { } callbackQuery)
+            {
+                await ProcessCallbackQueryAsync(callbackQuery, history, settings, cancellationToken);
+                return;
+            }
+
             if (update.Message is not { Text: { } userInput } message)
                 return;
 
@@ -111,7 +127,7 @@ namespace MovieAgentCLI.Services
                 {
                     await _botClient.SendMessage(
                         chatId: chatId,
-                        text: "🤖 *Модель задумалась, но вернула пустой ответ. Перефразируйте запрос.*",
+                        text: "Модель задумалась, но вернула пустой ответ. Перефразируйте запрос.",
                         parseMode: ParseMode.Markdown,
                         cancellationToken: cancellationToken);
                     return;
@@ -120,18 +136,203 @@ namespace MovieAgentCLI.Services
                 history.AddAssistantMessage(response.Content);
                 TrimHistory(history);
 
-                await _botClient.SendMessage(
-                    chatId: chatId,
-                    text: response.Content,
-                    parseMode: ParseMode.Markdown,
-                    cancellationToken: cancellationToken);
+                var (finalText, keyboard) = ParseResponseContent(response.Content);
+
+                await SendMessageSafeAsync(chatId, finalText, keyboard, cancellationToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ошибка чата");
                 await _botClient.SendMessage(
                     chatId: chatId,
-                    text: "❌ Произошла ошибка при обращении к модели. Попробуйте еще раз.",
+                    text: "Произошла ошибка при обращении к модели. Попробуйте еще раз.",
+                    cancellationToken: cancellationToken);
+            }
+        }
+
+        private async Task ProcessCallbackQueryAsync(CallbackQuery callbackQuery, ChatHistory history, OpenAIPromptExecutionSettings settings, CancellationToken cancellationToken)
+        {
+            if (!TryParseMovieRequest(callbackQuery, out long chatId, out int movieId))
+            {
+                await _botClient.AnswerCallbackQuery(callbackQuery.Id, "Ошибка: неверные данные", cancellationToken: cancellationToken);
+                return;
+            }
+
+            await _botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
+            await HandleMovieSelectionAsync(chatId, movieId, history, settings, cancellationToken);
+        }
+
+        private bool TryParseMovieRequest(CallbackQuery query, out long chatId, out int movieId)
+        {
+            movieId = 0;
+            chatId = query.Message?.Chat.Id ?? 0;
+
+            if (chatId == 0 || string.IsNullOrEmpty(query.Data) || !query.Data.StartsWith(MovieCallbackPrefix))
+                return false;
+
+            string movieIdStr = query.Data[MovieCallbackPrefix.Length..];
+
+            return int.TryParse(movieIdStr, out movieId);
+        }
+
+        private async Task HandleMovieSelectionAsync(long chatId, int movieId, ChatHistory history, OpenAIPromptExecutionSettings settings, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _botClient.SendChatAction(chatId, ChatAction.Typing, cancellationToken: cancellationToken);
+                string? aiResponse = await FetchMovieInfoFromAiAsync(movieId, history, settings, cancellationToken);
+
+                if (string.IsNullOrWhiteSpace(aiResponse))
+                {
+                    await _botClient.SendMessage(chatId, "Не удалось получить информацию о фильме.", cancellationToken: cancellationToken);
+                    return;
+                }
+
+                var (finalText, keyboard) = ParseResponseContent(aiResponse);
+                await SendMessageSafeAsync(chatId, finalText, keyboard, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ошибка при обработке выбора фильма {MovieId}", movieId);
+                await _botClient.SendMessage(chatId, "Ошибка при получении информации о фильме.", cancellationToken: cancellationToken);
+            }
+        }
+
+        private async Task<string?> FetchMovieInfoFromAiAsync(int movieId, ChatHistory history, OpenAIPromptExecutionSettings settings, CancellationToken cancellationToken)
+        {
+            history.AddUserMessage($"Покажи подробности о фильме с ID {movieId}");
+
+            var response = await _chatService.GetChatMessageContentAsync(
+                history,
+                executionSettings: settings,
+                kernel: _kernel,
+                cancellationToken: cancellationToken
+            );
+
+            string? content = response.Content;
+
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                history.AddAssistantMessage(content);
+                TrimHistory(history);
+            }
+
+            return content;
+        }
+
+        private (string Text, InlineKeyboardMarkup? Keyboard) ParseResponseContent(string rawText)
+        {
+            var (text, inlineKeyboard) = ExtractButtons(rawText);
+            text = LeftoverTextRegex.Replace(text, "");
+            text = text.Replace("[]", "").Replace("()", "").Replace("[]()", "");
+            text = MultipleNewlinesRegex.Replace(text, "\n\n").Trim();
+
+            var keyboard = inlineKeyboard.Count > 0 ? new InlineKeyboardMarkup(inlineKeyboard) : null;
+
+            return (text, keyboard);
+        }
+
+        private (string Text, List<InlineKeyboardButton[]> Keyboards) ExtractButtons(string text)
+        {
+            var keyboard = new List<InlineKeyboardButton[]>();
+
+            text = ExtractCalendarButton(text, keyboard);
+            text = ExtractMovieButtons(text, keyboard);
+            text = ExtractKinopoiskButtons(text, keyboard);
+
+            return (text, keyboard);
+        }
+
+        private string ExtractCalendarButton(string text, List<InlineKeyboardButton[]> keyboard)
+        {
+            var match = CalendarLinkRegex.Match(text);
+
+            if (match.Success)
+            {
+                string url = match.Groups[1].Value;
+                keyboard.Add([InlineKeyboardButton.WithUrl("Добавить в Календарь", url)]);
+
+                return text.Replace(match.Value, "").Trim();
+            }
+
+            return text;
+        }
+
+        private string ExtractMovieButtons(string text, List<InlineKeyboardButton[]> keyboard)
+        {
+            var moviesMatch = MoviesTagRegex.Match(text);
+
+            if (moviesMatch.Success)
+            {
+                var buttons = moviesMatch.Groups[1].Value.Split(',')
+                    .Select(id => id.Trim())
+                    .Where(id => int.TryParse(id, out _))
+                    .Select(id => InlineKeyboardButton.WithCallbackData("Фильм", $"movie:{id}"));
+
+                keyboard.AddRange(buttons.Chunk(2));
+
+                return MoviesTagRegex.Replace(text, "").Trim();
+            }
+
+            var movieMatch = MovieTagRegex.Match(text);
+
+            if (movieMatch.Success && int.TryParse(movieMatch.Groups[1].Value, out int id))
+            {
+                keyboard.Add([InlineKeyboardButton.WithCallbackData("Обновить данные", $"movie:{id}")]);
+                return MovieTagRegex.Replace(text, "").Trim();
+            }
+
+            return text;
+        }
+
+        private string ExtractKinopoiskButtons(string text, List<InlineKeyboardButton[]> keyboard)
+        {
+            var kpMatches = KinopoiskLinkRegex.Matches(text);
+            var uniqueUrls = kpMatches.Cast<System.Text.RegularExpressions.Match>()
+                                      .Select(m => m.Value)
+                                      .Distinct()
+                                      .ToList();
+
+            if (uniqueUrls.Count == 0)
+                return text;
+
+            var buttonsRow = new List<InlineKeyboardButton>();
+
+            for (int i = 0; i < uniqueUrls.Count; i++)
+            {
+                string url = uniqueUrls[i];
+                string buttonText = uniqueUrls.Count == 1 ? "Смотреть на Кинопоиске" : $"Фильм {i + 1}";
+                buttonsRow.Add(InlineKeyboardButton.WithUrl(buttonText, url));
+
+                string pattern = $@"\[.*?\]\({System.Text.RegularExpressions.Regex.Escape(url)}\)";
+                text = System.Text.RegularExpressions.Regex.Replace(text, pattern, "");
+                text = text.Replace(url, "");
+            }
+
+            keyboard.Add(buttonsRow.ToArray());
+            return text;
+        }
+
+        private async Task SendMessageSafeAsync(long chatId, string text, InlineKeyboardMarkup? keyboard, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _botClient.SendMessage(
+                    chatId: chatId,
+                    text: text,
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: keyboard,
+                    linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
+                    cancellationToken: cancellationToken);
+            }
+            catch (ApiRequestException)
+            {
+                _logger.LogWarning("Telegram не смог распарсить Markdown. Отправляем как обычный текст.");
+                await _botClient.SendMessage(
+                    chatId: chatId,
+                    text: text,
+                    replyMarkup: keyboard,
+                    linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
                     cancellationToken: cancellationToken);
             }
         }
@@ -151,7 +352,6 @@ namespace MovieAgentCLI.Services
         #endregion
 
         #region Initialization
-
         private async Task<ChatHistory> InitializeChatHistoryAsync()
         {
             string currentDateInfo = GenerateCurrentDateInfo();
