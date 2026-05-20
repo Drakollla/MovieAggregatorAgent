@@ -1,10 +1,8 @@
 using Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.SemanticKernel;
 using MovieAgentCLI.Plugins;
 using MovieAgentCLI.Services;
-using MovieAgentCLI.Settings;
 using Telegram.Bot;
 
 namespace MovieAgentCLI.Extensions
@@ -26,28 +24,18 @@ namespace MovieAgentCLI.Extensions
             return services;
         }
 
-        public static IServiceCollection AddKernelWithOllama(this IServiceCollection services, IConfiguration config)
+        public static IServiceCollection AddKernelWithProvider(this IServiceCollection services, IConfiguration config)
         {
-            var ollamaSettings = config.GetSection("OllamaSettings").Get<OllamaSettings>() ?? new OllamaSettings();
-            var apiKey = config["ApiKeys:Ollama"] ?? "ollama";
+            string providerName = config["LLM:Provider"] ?? "Ollama";
 
-            var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) };
-            var httpClient = new HttpClient(handler)
+            ILLMProvider provider = providerName switch
             {
-                BaseAddress = new Uri(ollamaSettings.Endpoint),
-                Timeout = TimeSpan.FromMinutes(5)
+                "Ollama" => new OllamaProvider(),
+                "Mock" => new MockProvider(),
+                _ => throw new InvalidOperationException($"Неизвестный LLM-провайдер: {providerName}. Доступные: Ollama, Mock.")
             };
 
-            services.AddKernel()
-                .AddOpenAIChatCompletion(
-                    modelId: ollamaSettings.ModelId,
-                    apiKey: apiKey,
-                    httpClient: httpClient
-                )
-                .Plugins
-                   .AddFromType<MoviePlugin>()
-                   .AddFromType<WebSearchPlugin>()
-                   .AddFromType<CalendarPlugin>(); ;
+            provider.Register(services, config);
 
             return services;
         }

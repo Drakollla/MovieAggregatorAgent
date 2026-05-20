@@ -29,7 +29,7 @@ try
     builder.Services.AddSerilog();
     builder.Configuration.AddUserSecrets<Program>();
     builder.Services.AddApplicationServices(builder.Configuration);
-    builder.Services.AddKernelWithOllama(builder.Configuration);
+    builder.Services.AddKernelWithProvider(builder.Configuration);
     builder.Services.AddHostedService<ConsoleChatService>();
 
     var host = builder.Build();
