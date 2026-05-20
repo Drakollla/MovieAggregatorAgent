@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using System.Net.Http.Json;
@@ -10,14 +11,16 @@ namespace MovieAgentCLI.Plugins
     public class WebSearchPlugin
     {
         private readonly HttpClient _httpClient;
+        private readonly ILogger<WebSearchPlugin> _logger;
         private readonly string _apiKey;
 
         private const int MaxResults = 3;
         private const string SerperApiUrl = "https://google.serper.dev/search";
 
-        public WebSearchPlugin(HttpClient httpClient, IConfiguration config)
+        public WebSearchPlugin(HttpClient httpClient, IConfiguration config, ILogger<WebSearchPlugin> logger)
         {
             _httpClient = httpClient;
+            _logger = logger;
 
             _apiKey = config["ApiKeys:Serper"] 
                 ?? throw new ArgumentNullException("Serper API Key is missing");
@@ -36,10 +39,12 @@ namespace MovieAgentCLI.Plugins
             }
             catch (HttpRequestException httpEx)
             {
+                _logger.LogError(httpEx, "Serper API HTTP error.");
                 return $"Ошибка API поиска: {httpEx.Message}";
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Unexpected error in WebSearch.");
                 return $"Непредвиденная ошибка при поиске: {ex.Message}";
             }
         }

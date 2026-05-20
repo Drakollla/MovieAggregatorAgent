@@ -268,7 +268,10 @@ namespace MovieAgentCLI.Services
             {
                 await _botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to delete status message {MessageId}", messageId);
+            }
         }
 
         private (string Text, InlineKeyboardMarkup? Keyboard) ParseResponseContent(string rawText)

@@ -1,4 +1,5 @@
 ﻿using Contracts;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using System.Text.Json;
@@ -11,10 +12,12 @@ namespace MovieAgentCLI.Plugins
         public const int CalendarBufferMinutes = 10;
 
         private readonly IMovieService _movieService;
+        private readonly ILogger<CalendarPlugin> _logger;
 
-        public CalendarPlugin(IMovieService movieService)
+        public CalendarPlugin(IMovieService movieService, ILogger<CalendarPlugin> logger)
         {
             _movieService = movieService;
+            _logger = logger;
         }
 
         [KernelFunction]
@@ -42,6 +45,7 @@ namespace MovieAgentCLI.Plugins
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error generating calendar link.");
                 return $"Error generating link: {ex.Message}";
             }
         }
@@ -69,7 +73,10 @@ namespace MovieAgentCLI.Plugins
                         url = $"https://www.kinopoisk.ru/film/{idProp.GetInt32()}/";
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get movie details for calendar.");
+            }
 
             return (durationMinutes, url);
         }

@@ -1,22 +1,24 @@
 ﻿using Contracts;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace MovieAgentCLI.Services
 {
     public class KinopoiskService : IMovieService
     {
-        //private const string KinopoiskBaseUrl = "https://api.kinopoisk.dev/";
         private const string KinopoiskBaseUrl = "https://api.poiskkino.dev/";
         private const int FutureYearsOffset = 10;
 
         private readonly HttpClient _httpClient;
+        private readonly ILogger<KinopoiskService> _logger;
         private readonly Random _random;
 
-        public KinopoiskService(HttpClient httpClient, IConfiguration config)
+        public KinopoiskService(HttpClient httpClient, IConfiguration config, ILogger<KinopoiskService> logger)
         {
             _httpClient = httpClient;
             _httpClient.BaseAddress = new Uri(KinopoiskBaseUrl);
+            _logger = logger;
             _random = new Random();
 
             var token = config["ApiKeys:Tmdb"]
@@ -54,30 +56,31 @@ namespace MovieAgentCLI.Services
         {
             try
             {
-
                 var response = await _httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     string errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Ошибка API (Статус: {response.StatusCode}): {errorContent}");
-
-                    return errorContent;
+                    _logger.LogWarning("Kinopoisk API error ({StatusCode}): {Error}", response.StatusCode, errorContent);
+                    throw new HttpRequestException($"Kinopoisk API error: {(int)response.StatusCode}");
                 }
 
                 return await response.Content.ReadAsStringAsync();
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
-                return CreateErrorJson("Failed to connect to Kinopoisk server. Check your internet connection.");
+                _logger.LogError(ex, "Kinopoisk HTTP request failed");
+                return CreateErrorJson("Не удалось подключиться к серверу Кинопоиска. Проверьте интернет-соединение.");
             }
             catch (TaskCanceledException)
             {
-                return CreateErrorJson("Request timed out. Please try again.");
+                _logger.LogWarning("Kinopoisk request timed out");
+                return CreateErrorJson("Превышено время ожидания. Попробуйте ещё раз.");
             }
             catch (Exception ex)
             {
-                return CreateErrorJson($"An error occurred: {ex.Message}");
+                _logger.LogError(ex, "Unexpected error in Kinopoisk service");
+                return CreateErrorJson($"Произошла ошибка: {ex.Message}");
             }
         }
 

@@ -27,6 +27,10 @@ namespace MovieAgentCLI.Plugins
 
             string json = await _movieService.SearchMovieAsync(query);
             using var doc = JsonDocument.Parse(json);
+
+            if (doc.RootElement.TryGetProperty("error", out var errorProp))
+                return $"Ошибка базы: {errorProp.GetString()}";
+
             var bestMatch = GetBestMovieMatch(doc.RootElement, query);
 
             if (!bestMatch.HasValue)
@@ -56,6 +60,9 @@ namespace MovieAgentCLI.Plugins
             string json = await _movieService.SearchByCriteriaAsync(genre, yearFrom, yearTo, ratingMin, keyword);
             using var doc = JsonDocument.Parse(json);
 
+            if (doc.RootElement.TryGetProperty("error", out var errorProp))
+                return $"Ошибка базы: {errorProp.GetString()}";
+
             if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.GetArrayLength() == 0)
                 return "По вашим критериям ничего не найдено в базе.";
 
@@ -77,6 +84,9 @@ namespace MovieAgentCLI.Plugins
                 using var fullDoc = JsonDocument.Parse(fullMovieJson);
                 var fullRoot = fullDoc.RootElement;
 
+                if (fullRoot.TryGetProperty("error", out var errorProp))
+                    return $"Ошибка базы: {errorProp.GetString()}";
+
                 if (!fullRoot.TryGetProperty("similarMovies", out var similarMovies) || similarMovies.GetArrayLength() == 0)
                     return $"К сожалению, для фильма «{sourceName}» ({sourceYear}) Кинопоиск не предоставляет список похожих.";
 
@@ -97,6 +107,9 @@ namespace MovieAgentCLI.Plugins
                 string json = await _movieService.GetMovieByIdAsync(movieId);
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
+
+                if (root.TryGetProperty("error", out var errorProp))
+                    return $"Ошибка базы: {errorProp.GetString()}";
 
                 var name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "Без названия" : "Без названия";
                 var year = root.TryGetProperty("year", out var y) ? y.GetInt32() : 0;
