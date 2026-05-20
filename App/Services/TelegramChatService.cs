@@ -29,6 +29,14 @@ namespace MovieAgentCLI.Services
         private const int MaxHistoryMessages = 4;
         private const string MovieCallbackPrefix = "movie:";
 
+        private static readonly Dictionary<string, string> StatusMessages = new()
+        {
+            { "searching", "🔍 Ищу фильм..." },
+            { "thinking", "🤔 Анализирую запрос..." },
+            { "generating", "✨ Генерирую ответ..." },
+            { "details", "📋 Загружаю подробности..." },
+        };
+
         public TelegramChatService(Kernel kernel, ILogger<TelegramChatService> logger, ITelegramBotClient botClient)
         {
             _kernel = kernel;
@@ -115,8 +123,12 @@ namespace MovieAgentCLI.Services
 
         private async Task ProcessAgentResponseAsync(long chatId, ChatHistory history, OpenAIPromptExecutionSettings settings, CancellationToken cancellationToken)
         {
+            Message? statusMessage = null;
+
             try
             {
+                statusMessage = await SendStatusAsync(chatId, "thinking", cancellationToken);
+
                 var response = await _chatService.GetChatMessageContentAsync(
                     history,
                     executionSettings: settings,
@@ -134,12 +146,15 @@ namespace MovieAgentCLI.Services
                     return;
                 }
 
+                await UpdateStatusAsync(chatId, statusMessage.MessageId, "generating", cancellationToken);
+
                 history.AddAssistantMessage(response.Content);
                 TrimHistory(history);
 
                 var (finalText, keyboard) = ParseResponseContent(response.Content);
 
                 await SendMessageSafeAsync(chatId, finalText, keyboard, cancellationToken);
+                await DeleteStatusAsync(chatId, statusMessage.MessageId, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -148,6 +163,9 @@ namespace MovieAgentCLI.Services
                     chatId: chatId,
                     text: "Произошла ошибка при обращении к модели. Попробуйте еще раз.",
                     cancellationToken: cancellationToken);
+                
+                if (statusMessage != null)
+                    await DeleteStatusAsync(chatId, statusMessage.MessageId, cancellationToken);
             }
         }
 
@@ -178,9 +196,11 @@ namespace MovieAgentCLI.Services
 
         private async Task HandleMovieSelectionAsync(long chatId, int movieId, ChatHistory history, OpenAIPromptExecutionSettings settings, CancellationToken cancellationToken)
         {
+            Message? statusMessage = null;
+
             try
             {
-                await _botClient.SendChatAction(chatId, ChatAction.Typing, cancellationToken: cancellationToken);
+                statusMessage = await SendStatusAsync(chatId, "details", cancellationToken);
                 string? aiResponse = await FetchMovieInfoFromAiAsync(movieId, history, settings, cancellationToken);
 
                 if (string.IsNullOrWhiteSpace(aiResponse))
@@ -189,13 +209,22 @@ namespace MovieAgentCLI.Services
                     return;
                 }
 
+                await UpdateStatusAsync(chatId, statusMessage.MessageId, "generating", cancellationToken);
+
+                history.AddAssistantMessage(aiResponse);
+                TrimHistory(history);
+
                 var (finalText, keyboard) = ParseResponseContent(aiResponse);
                 await SendMessageSafeAsync(chatId, finalText, keyboard, cancellationToken);
+                await DeleteStatusAsync(chatId, statusMessage.MessageId, cancellationToken);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка при обработке выбора фильма {MovieId}", movieId);
+                _logger.LogError(ex, "Ошибка при обработке выбора фильма");
                 await _botClient.SendMessage(chatId, "Ошибка при получении информации о фильме.", cancellationToken: cancellationToken);
+                
+                if (statusMessage != null)
+                    await DeleteStatusAsync(chatId, statusMessage.MessageId, cancellationToken);
             }
         }
 
@@ -219,6 +248,27 @@ namespace MovieAgentCLI.Services
             }
 
             return content;
+        }
+
+        private async Task<Message> SendStatusAsync(long chatId, string statusKey, CancellationToken cancellationToken)
+        {
+            string text = StatusMessages.GetValueOrDefault(statusKey, "⏳ Обрабатываю...");
+            return await _botClient.SendMessage(chatId, text, cancellationToken: cancellationToken);
+        }
+
+        private async Task UpdateStatusAsync(long chatId, int messageId, string statusKey, CancellationToken cancellationToken)
+        {
+            string text = StatusMessages.GetValueOrDefault(statusKey, "⏳ Обрабатываю...");
+            await _botClient.EditMessageText(chatId, messageId, text, cancellationToken: cancellationToken);
+        }
+
+        private async Task DeleteStatusAsync(long chatId, int messageId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
+            }
+            catch { }
         }
 
         private (string Text, InlineKeyboardMarkup? Keyboard) ParseResponseContent(string rawText)
