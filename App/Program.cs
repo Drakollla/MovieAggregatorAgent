@@ -3,27 +3,39 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using MovieAgentCLI.Extensions;
 using MovieAgentCLI.Services;
+using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
 
 AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
 {
-    Console.WriteLine("Произошла непредвиденная ошибка. Попробуйте перезапустить приложение.");
+    Log.Fatal((Exception)args.ExceptionObject, "Непредвиденная ошибка");
     Environment.Exit(1);
 };
 
 TaskScheduler.UnobservedTaskException += (sender, args) =>
 {
-    Console.WriteLine("Что-то пошло не так. Попробуйте ещё раз.");
+    Log.Error(args.Exception, "Необработанная ошибка задачи");
     args.SetObserved();
 };
 
-var builder = Host.CreateApplicationBuilder(args);
+try
+{
+    var builder = Host.CreateApplicationBuilder(args);
 
-builder.Configuration.AddUserSecrets<Program>();
-builder.Services.AddApplicationServices(builder.Configuration);
-builder.Services.AddKernelWithOllama(builder.Configuration);
+    builder.Services.AddSerilog();
+    builder.Configuration.AddUserSecrets<Program>();
+    builder.Services.AddApplicationServices(builder.Configuration);
+    builder.Services.AddKernelWithOllama(builder.Configuration);
+    builder.Services.AddHostedService<ConsoleChatService>();
 
-builder.Services.AddHostedService<ConsoleChatService>();
-
-var host = builder.Build();
-
-await host.RunAsync();
+    var host = builder.Build();
+    await host.RunAsync();
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
+}
