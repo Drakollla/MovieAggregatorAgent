@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using System.Text.RegularExpressions;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
@@ -18,12 +19,12 @@ namespace MovieAgentCLI.Services
         private readonly IChatCompletionService _chatService;
         private readonly ITelegramBotClient _botClient;
 
-        private static readonly System.Text.RegularExpressions.Regex CalendarLinkRegex = new(@"\[.*?\]\((https://calendar\.google\.com[^\)]+)\)", System.Text.RegularExpressions.RegexOptions.Compiled);
-        private static readonly System.Text.RegularExpressions.Regex KinopoiskLinkRegex = new(@"https://(?:www\.)?kinopoisk\.ru/(?:film|series)/\d+/?", System.Text.RegularExpressions.RegexOptions.Compiled);
-        private static readonly System.Text.RegularExpressions.Regex LeftoverTextRegex = new(@"(?i)(Где смотреть|Где посмотреть|Ссылка)[\s:]*", System.Text.RegularExpressions.RegexOptions.Compiled);
-        private static readonly System.Text.RegularExpressions.Regex MultipleNewlinesRegex = new(@"\n{3,}", System.Text.RegularExpressions.RegexOptions.Compiled);
-        private static readonly System.Text.RegularExpressions.Regex MoviesTagRegex = new(@"\[MOVIES:(\d+(?:,\d+)*)\]", System.Text.RegularExpressions.RegexOptions.Compiled);
-        private static readonly System.Text.RegularExpressions.Regex MovieTagRegex = new(@"\[MOVIE:(\d+)\]", System.Text.RegularExpressions.RegexOptions.Compiled);
+        private static readonly Regex CalendarLinkRegex = new(@"\[.*?\]\((https://calendar\.google\.com[^\)]+)\)", RegexOptions.Compiled);
+        private static readonly Regex KinopoiskLinkRegex = new(@"https://(?:www\.)?kinopoisk\.ru/(?:film|series)/\d+/?", RegexOptions.Compiled);
+        private static readonly Regex LeftoverTextRegex = new(@"(?i)(Где смотреть|Где посмотреть|Ссылка)[\s:]*", RegexOptions.Compiled);
+        private static readonly Regex MultipleNewlinesRegex = new(@"\n{3,}", RegexOptions.Compiled);
+        private static readonly Regex MoviesTagRegex = new(@"\[MOVIES:(\d+(?:,\d+)*)\]", RegexOptions.Compiled);
+        private static readonly Regex MovieTagRegex = new(@"\[MOVIE:(\d+)\]", RegexOptions.Compiled);
 
         private const int MaxHistoryMessages = 4;
         private const string MovieCallbackPrefix = "movie:";
