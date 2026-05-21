@@ -1,4 +1,5 @@
 using Contracts;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MovieAgentCLI.Plugins;
@@ -11,6 +12,7 @@ namespace MovieAgentCLI.Extensions
     {
         public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration config)
         {
+            services.AddMemoryCache();
             services.AddHttpClient<IMovieService, KinopoiskService>();
             services.AddHttpClient<WebSearchPlugin>();
 

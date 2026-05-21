@@ -38,7 +38,7 @@ namespace MovieAgentCLI.Plugins
 
             var (name, year, rating, description, kpId) = ExtractMovieInfo(bestMatch.Value);
 
-            return $"ДАННЫЕ ИЗ БАЗЫ: Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/\n[MOVIE:{kpId}]";
+            return $"Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/\n[MOVIE:{kpId}]";
         }
 
         [KernelFunction]
@@ -123,7 +123,7 @@ namespace MovieAgentCLI.Plugins
                     ? string.Join(", ", g.EnumerateArray().Select(x => x.TryGetProperty("name", out var gn) ? gn.GetString() ?? "" : "").Where(x => !string.IsNullOrEmpty(x)))
                     : "Неизвестно";
 
-                return $"🎬 {name} ({year})\n⭐ Рейтинг: {rating:F1}\n🎭 Жанры: {genres}\n📝 Сюжет: {description}\n🔗 {KinopoiskBaseUrl}{movieId}/\n[MOVIE:{movieId}]";
+                return $" {name} ({year})\n⭐ Рейтинг: {rating:F1}\n Жанры: {genres}\n📝 Сюжет: {description}\n🔗 {KinopoiskBaseUrl}{movieId}/\n[MOVIE:{movieId}]";
             }
             catch (Exception ex)
             {
@@ -268,7 +268,7 @@ namespace MovieAgentCLI.Plugins
 
         private static string BuildCriteriaResponse(JsonElement docs, List<string> requiredGenres)
         {
-            var output = new StringBuilder("ДАННЫЕ ИЗ БАЗЫ:\n");
+            var output = new StringBuilder();
             var movieIds = new List<int>();
             int count = 0;
 
@@ -300,12 +300,11 @@ namespace MovieAgentCLI.Plugins
         {
             var (name, year, rating, description, kpId) = ExtractMovieInfo(element);
 
-            output.AppendLine("<MOVIE>");
             output.AppendLine($"Название: {name} ({year})");
             output.AppendLine($"Рейтинг: {rating:F1}");
             output.AppendLine($"Сюжет: {description}");
-            output.AppendLine($"Где смотреть: {KinopoiskBaseUrl}{kpId}/");
-            output.AppendLine("</MOVIE>\n");
+            output.AppendLine($"Ссылка: {KinopoiskBaseUrl}{kpId}/");
+            output.AppendLine();
         }
 
         private static string BuildSimilarResponse(JsonElement similarMovies, JsonElement fullRoot, string sourceName, int sourceYear)

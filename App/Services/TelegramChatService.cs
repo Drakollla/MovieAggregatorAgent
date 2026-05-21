@@ -276,7 +276,30 @@ namespace MovieAgentCLI.Services
 
         private (string Text, InlineKeyboardMarkup? Keyboard) ParseResponseContent(string rawText)
         {
-            var (text, inlineKeyboard) = ExtractButtons(rawText);
+            bool isListResponse = MoviesTagRegex.Match(rawText).Success;
+            
+            if (!isListResponse)
+            {
+                var linkMatches = KinopoiskLinkRegex.Matches(rawText);
+                if (linkMatches.Count > 1)
+                    isListResponse = true;
+            }
+
+            if (!isListResponse)
+            {
+                var singleMovieMatches = MovieTagRegex.Matches(rawText);
+                if (singleMovieMatches.Count > 1)
+                    isListResponse = true;
+            }
+
+            string textToParse = rawText;
+            if (isListResponse)
+            {
+                textToParse = MovieTagRegex.Replace(rawText, "").Trim();
+            }
+
+            var (text, inlineKeyboard) = ExtractButtons(textToParse);
+
             text = LeftoverTextRegex.Replace(text, "");
             text = text.Replace("[]", "").Replace("()", "").Replace("[]()", "");
             text = MultipleNewlinesRegex.Replace(text, "\n\n").Trim();
@@ -342,7 +365,7 @@ namespace MovieAgentCLI.Services
         private string ExtractKinopoiskButtons(string text, List<InlineKeyboardButton[]> keyboard)
         {
             var kpMatches = KinopoiskLinkRegex.Matches(text);
-            var uniqueUrls = kpMatches.Cast<System.Text.RegularExpressions.Match>()
+            var uniqueUrls = kpMatches.Cast<Match>()
                                       .Select(m => m.Value)
                                       .Distinct()
                                       .ToList();
@@ -358,8 +381,8 @@ namespace MovieAgentCLI.Services
                 string buttonText = uniqueUrls.Count == 1 ? "Смотреть на Кинопоиске" : $"Фильм {i + 1}";
                 buttonsRow.Add(InlineKeyboardButton.WithUrl(buttonText, url));
 
-                string pattern = $@"\[.*?\]\({System.Text.RegularExpressions.Regex.Escape(url)}\)";
-                text = System.Text.RegularExpressions.Regex.Replace(text, pattern, "");
+                string pattern = $@"\[.*?\]\({Regex.Escape(url)}\)";
+                text = Regex.Replace(text, pattern, "");
                 text = text.Replace(url, "");
             }
 

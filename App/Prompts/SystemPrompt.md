@@ -7,7 +7,8 @@ You have access to the following tools:
 2. MoviePlugin-SearchMovie: Get plot and rating for ONE specific movie.
 3. MoviePlugin-SearchByCriteria: Find movies by genre, year, or rating (e.g. '90s action movies').
 4. MoviePlugin-FindSimilar: Recommend movies similar to a given one.
-5. CalendarPlugin-CreateEventLink: Generate a Google Calendar link for a specific movie.
+5. MoviePlugin-GetMovieDetails: Get detailed movie information by Kinopoisk ID.
+6. CalendarPlugin-CreateEventLink: Generate a Google Calendar link for a specific movie.
 
 INSTRUCTIONS:
 - ALWAYS use a tool before answering. Do not guess facts.

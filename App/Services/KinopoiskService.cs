@@ -1,4 +1,5 @@
 ﻿using Contracts;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -13,13 +14,15 @@ namespace MovieAgentCLI.Services
         private readonly HttpClient _httpClient;
         private readonly ILogger<KinopoiskService> _logger;
         private readonly Random _random;
+        private readonly IMemoryCache _cache;
 
-        public KinopoiskService(HttpClient httpClient, IConfiguration config, ILogger<KinopoiskService> logger)
+        public KinopoiskService(HttpClient httpClient, IConfiguration config, ILogger<KinopoiskService> logger, IMemoryCache cache)
         {
             _httpClient = httpClient;
             _httpClient.BaseAddress = new Uri(KinopoiskBaseUrl);
             _logger = logger;
             _random = new Random();
+            _cache = cache;
 
             var token = config["ApiKeys:Tmdb"]
                 ?? throw new ArgumentNullException("API Token not found");
@@ -31,13 +34,13 @@ namespace MovieAgentCLI.Services
         public async Task<string> SearchMovieAsync(string query)
         {
             string url = $"v1.4/movie/search?page=1&limit=5&query={Uri.EscapeDataString(query)}";
-            return await GetAsync(url);
+            return await GetAsync(url, cacheDuration: TimeSpan.FromMinutes(30));
         }
 
         public async Task<string> GetMovieByIdAsync(int id)
         {
             string url = $"v1.4/movie/{id}";
-            return await GetAsync(url);
+            return await GetAsync(url, cacheDuration: TimeSpan.FromHours(24));
         }
 
         public async Task<string> SearchByCriteriaAsync(
@@ -52,8 +55,16 @@ namespace MovieAgentCLI.Services
             return await GetAsync(url);
         }
 
-        private async Task<string> GetAsync(string url)
+        private async Task<string> GetAsync(string url, TimeSpan? cacheDuration = null)
         {
+            string? cacheKey = cacheDuration.HasValue ? url : null;
+
+            if (cacheKey != null && _cache.TryGetValue(cacheKey, out string? cached) && cached is not null)
+            {
+                _logger.LogDebug("Cache hit for {Url}", url);
+                return cached!;
+            }
+
             try
             {
                 var response = await _httpClient.GetAsync(url);
@@ -65,7 +76,18 @@ namespace MovieAgentCLI.Services
                     throw new HttpRequestException($"Kinopoisk API error: {(int)response.StatusCode}");
                 }
 
-                return await response.Content.ReadAsStringAsync();
+                string result = await response.Content.ReadAsStringAsync();
+
+                if (cacheKey != null)
+                {
+                    _cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = cacheDuration!.Value
+                    });
+                    _logger.LogDebug("Cached response for {Url}", url);
+                }
+
+                return result;
             }
             catch (HttpRequestException ex)
             {
