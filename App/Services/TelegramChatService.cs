@@ -50,6 +50,20 @@ namespace MovieAgentCLI.Services
             var me = await _botClient.GetMe(stoppingToken);
             _logger.LogInformation($"FilmAgent (@{me.Username}) запущен и готов к общению!");
 
+            try
+            {
+                var botCommands = new[]
+                {
+                    new BotCommand { Command = "start", Description = "Приветствие и инструкция" },
+                    new BotCommand { Command = "help", Description = "Список команд и примеры запросов" },
+                };
+                await _botClient.SetMyCommands(commands: botCommands, cancellationToken: stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Не удалось зарегистрировать команды бота");
+            }
+
             var history = await InitializeChatHistoryAsync();
             var executionSettings = GetExecutionSettings();
 
@@ -106,7 +120,17 @@ namespace MovieAgentCLI.Services
 
                 await _botClient.SendMessage(
                     chatId: chatId,
-                    text: "Привет! Я FilmAgent 🎬. Какой фильм вы ищете сегодня?",
+                    text: "Привет! Я FilmAgent 🎬\n\nЯ помогу найти фильмы по названию, жанру, рейтингу или году. Также могу рассказать о фильме подробнее и показать похожие.\n\nКоманды:\n/help — список команд и примеры",
+                    cancellationToken: cancellationToken);
+                return;
+            }
+
+            if (userInput.StartsWith("/help"))
+            {
+                await _botClient.SendMessage(
+                    chatId: chatId,
+                    text: "📖 *Команды*\n/start — приветствие и инструкция\n/help — эта справка\n/random — случайный фильм\n/top — топ-3 по рейтингу\n\n💬 *Примеры запросов:*\n- «Найди фильм Матрица»\n- «Покажи комедии с рейтингом выше 8»\n- «Что посмотреть похожее на Интерстеллар»\n- «Фантастика с 2010 по 2020 год»",
+                    parseMode: ParseMode.Markdown,
                     cancellationToken: cancellationToken);
                 return;
             }
