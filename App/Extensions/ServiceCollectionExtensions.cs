@@ -15,8 +15,10 @@ namespace MovieAgentCLI.Extensions
         public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration config)
         {
             services.AddMemoryCache();
+            services.AddTransient<RateLimitingHandler>();
             services.AddHttpClient<IMovieService, KinopoiskService>()
-                .AddPolicyHandler(GetKinopoiskRetryPolicy());
+                .AddPolicyHandler(GetKinopoiskRetryPolicy())
+                .AddHttpMessageHandler<RateLimitingHandler>();
             services.AddHttpClient<WebSearchPlugin>();
 
             string telegramToken = config["ApiKeys:Telegram"]
