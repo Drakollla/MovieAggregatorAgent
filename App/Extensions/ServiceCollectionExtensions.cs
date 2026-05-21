@@ -4,6 +4,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MovieAgentCLI.Plugins;
 using MovieAgentCLI.Services;
+using Polly;
+using Polly.Extensions.Http;
 using Telegram.Bot;
 
 namespace MovieAgentCLI.Extensions
@@ -13,7 +15,8 @@ namespace MovieAgentCLI.Extensions
         public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration config)
         {
             services.AddMemoryCache();
-            services.AddHttpClient<IMovieService, KinopoiskService>();
+            services.AddHttpClient<IMovieService, KinopoiskService>()
+                .AddPolicyHandler(GetKinopoiskRetryPolicy());
             services.AddHttpClient<WebSearchPlugin>();
 
             string telegramToken = config["ApiKeys:Telegram"]
@@ -24,6 +27,16 @@ namespace MovieAgentCLI.Extensions
             //services.AddHostedService<ConsoleChatService>();
 
             return services;
+        }
+
+        private static IAsyncPolicy<HttpResponseMessage> GetKinopoiskRetryPolicy()
+        {
+            return HttpPolicyExtensions
+                .HandleTransientHttpError()
+                .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                .WaitAndRetryAsync(
+                    retryCount: 3,
+                    sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
         }
 
         public static IServiceCollection AddKernelWithProvider(this IServiceCollection services, IConfiguration config)
