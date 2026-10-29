@@ -1,15 +1,19 @@
-﻿namespace Contracts
+﻿using Domain;
+
+namespace Contracts
 {
     public interface IMovieService
     {
-        Task<string> SearchMovieAsync(string query);
+        Task<IReadOnlyList<Movie>> SearchMoviesAsync(
+            string query,
+            CancellationToken cancellationToken = default);
 
-        Task<string> SearchByCriteriaAsync(string? genre = null,
-            int? yearFrom = null, 
-            int? yearTo = null,
-            float? ratingMin = null, 
-            string? keyword = null);
+        Task<IReadOnlyList<Movie>> SearchByCriteriaAsync(
+            MovieSearchCriteria criteria,
+            CancellationToken cancellationToken = default);
 
-        Task<string> GetMovieByIdAsync(int id);
+        Task<Movie?> GetMovieAsync(
+            int id,
+            CancellationToken cancellationToken = default);
     }
 }

@@ -37,6 +37,7 @@ try
     builder.Services.AddHostedService<ConsoleChatService>();
 
     var host = builder.Build();
+
     await host.RunAsync();
 }
 finally

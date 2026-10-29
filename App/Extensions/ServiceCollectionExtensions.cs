@@ -1,5 +1,4 @@
 using Contracts;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MovieAgentCLI.Plugins;
@@ -26,7 +25,6 @@ namespace MovieAgentCLI.Extensions
 
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
             services.AddHostedService<TelegramChatService>();
-            //services.AddHostedService<ConsoleChatService>();
 
             return services;
         }

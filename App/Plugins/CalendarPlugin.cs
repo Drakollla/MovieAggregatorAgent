@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
-using System.Text.Json;
 
 namespace MovieAgentCLI.Plugins
 {
@@ -10,6 +9,7 @@ namespace MovieAgentCLI.Plugins
     {
         public const int DefaultMovieDurationMinutes = 120;
         public const int CalendarBufferMinutes = 10;
+        private const string KinopoiskBaseUrl = "https://www.kinopoisk.ru/film/";
 
         private readonly IMovieService _movieService;
         private readonly ILogger<CalendarPlugin> _logger;
@@ -25,14 +25,15 @@ namespace MovieAgentCLI.Plugins
         public async Task<string> CreateEventLink(
             [Description("Movie title")] string movieTitle,
             [Description("Event date in YYYY-MM-DD format (e.g., 2025-01-01)")] string date,
-            [Description("Optional. Event time in HH:mm format (e.g., 20:00). Leave empty for all-day events (premieres).")] string? time = null)
+            [Description("Optional. Event time in HH:mm format (e.g., 20:00). Leave empty for all-day events (premieres).")] string? time = null,
+            CancellationToken cancellationToken = default)
         {
             try
             {
                 if (!DateTime.TryParse(date, out DateTime eventDate))
                     return "Error: Invalid date format. Use YYYY-MM-DD.";
 
-                var movieDetails = await GetMovieDetailsAsync(movieTitle);
+                var movieDetails = await GetMovieDetailsAsync(movieTitle, cancellationToken);
                 string datesParam;
 
                 if (!string.IsNullOrWhiteSpace(time) && TimeSpan.TryParse(time, out TimeSpan eventTime))
@@ -51,26 +52,19 @@ namespace MovieAgentCLI.Plugins
         }
 
         #region Helpers
-        private async Task<(int Duration, string Url)> GetMovieDetailsAsync(string movieTitle)
-        {
-            int durationMinutes = DefaultMovieDurationMinutes;
-            string url = "";
 
+        private async Task<(int Duration, string Url)> GetMovieDetailsAsync(string movieTitle, CancellationToken cancellationToken)
+        {
             try
             {
-                string searchJson = await _movieService.SearchMovieAsync(movieTitle);
-                using var doc = JsonDocument.Parse(searchJson);
-                var root = doc.RootElement;
+                var movies = await _movieService.SearchMoviesAsync(movieTitle, cancellationToken);
+                var movie = movies.FirstOrDefault();
 
-                if (root.TryGetProperty("docs", out var docs) && docs.GetArrayLength() > 0)
+                if (movie is not null)
                 {
-                    var firstMovie = docs[0];
-
-                    if (firstMovie.TryGetProperty("movieLength", out var lengthProp) && lengthProp.ValueKind != JsonValueKind.Null)
-                        durationMinutes = lengthProp.GetInt32();
-
-                    if (firstMovie.TryGetProperty("id", out var idProp))
-                        url = $"https://www.kinopoisk.ru/film/{idProp.GetInt32()}/";
+                    int durationMinutes = movie.DurationMinutes ?? DefaultMovieDurationMinutes;
+                    string url = $"{KinopoiskBaseUrl}{movie.Id}/";
+                    return (durationMinutes, url);
                 }
             }
             catch (Exception ex)
@@ -78,7 +72,7 @@ namespace MovieAgentCLI.Plugins
                 _logger.LogWarning(ex, "Failed to get movie details for calendar.");
             }
 
-            return (durationMinutes, url);
+            return (DefaultMovieDurationMinutes, "");
         }
 
         private static string BuildGoogleCalendarUrl(string movieTitle, string datesParam, string movieUrl)
@@ -110,6 +104,7 @@ namespace MovieAgentCLI.Plugins
 
             return $"{startStr}/{endStr}";
         }
+
         #endregion
     }
 }
