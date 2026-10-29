@@ -1,25 +1,18 @@
-using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using MovieAgentCLI.Plugins;
+using System.Runtime.CompilerServices;
 
-namespace MovieAgentCLI.Services
+namespace MovieAgentCLI.LLM
 {
     public class MockProvider : ILLMProvider
     {
         public string Name => "Mock";
 
-        public void Register(IServiceCollection services, IConfiguration config)
+        public void Register(IKernelBuilder builder, IConfiguration config)
         {
-            services.AddSingleton<IChatCompletionService, MockChatCompletionService>();
-
-            var kernelBuilder = services.AddKernel();
-            kernelBuilder.Plugins
-                .AddFromType<MoviePlugin>()
-                .AddFromType<WebSearchPlugin>()
-                .AddFromType<CalendarPlugin>();
+            builder.Services.AddSingleton<IChatCompletionService, MockChatCompletionService>();
         }
     }
 
@@ -69,7 +62,7 @@ namespace MovieAgentCLI.Services
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var result = await GetChatMessageContentsAsync(chatHistory, executionSettings, kernel, cancellationToken);
-            
+
             foreach (var msg in result)
                 yield return new StreamingChatMessageContent(AuthorRole.Assistant, msg.Content);
         }

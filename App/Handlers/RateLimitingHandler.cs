@@ -1,7 +1,7 @@
 using System.Net;
 using System.Threading.RateLimiting;
 
-namespace MovieAgentCLI.Services;
+namespace MovieAgentCLI.Handlers;
 
 public class RateLimitingHandler : DelegatingHandler
 {

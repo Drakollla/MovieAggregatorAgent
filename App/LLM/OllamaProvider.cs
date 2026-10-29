@@ -1,16 +1,14 @@
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
-using MovieAgentCLI.Plugins;
 using MovieAgentCLI.Settings;
 
-namespace MovieAgentCLI.Services
+namespace MovieAgentCLI.LLM
 {
     public class OllamaProvider : ILLMProvider
     {
         public string Name => "Ollama";
 
-        public void Register(IServiceCollection services, IConfiguration config)
+        public void Register(IKernelBuilder builder, IConfiguration config)
         {
             var ollamaSettings = config.GetSection("OllamaSettings").Get<OllamaSettings>()
                 ?? throw new InvalidOperationException(
@@ -28,16 +26,11 @@ namespace MovieAgentCLI.Services
                 Timeout = TimeSpan.FromMinutes(5)
             };
 
-            services.AddKernel()
-                .AddOpenAIChatCompletion(
+            builder.AddOpenAIChatCompletion(
                     modelId: modelId,
                     apiKey: "ollama",
                     httpClient: httpClient
-                )
-                .Plugins
-                    .AddFromType<MoviePlugin>()
-                    .AddFromType<WebSearchPlugin>()
-                    .AddFromType<CalendarPlugin>();
+                );
         }
     }
 }
