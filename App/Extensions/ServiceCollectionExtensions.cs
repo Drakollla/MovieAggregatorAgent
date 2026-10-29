@@ -1,7 +1,9 @@
 using Contracts;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.SemanticKernel;
+using MovieAgentCLI.Handlers;
+using MovieAgentCLI.LLM;
 using MovieAgentCLI.Plugins;
 using MovieAgentCLI.Services;
 using Polly;
@@ -26,7 +28,6 @@ namespace MovieAgentCLI.Extensions
 
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
             services.AddHostedService<TelegramChatService>();
-            //services.AddHostedService<ConsoleChatService>();
 
             return services;
         }
@@ -41,18 +42,25 @@ namespace MovieAgentCLI.Extensions
                     sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
         }
 
-        public static IServiceCollection AddKernelWithProvider(this IServiceCollection services, IConfiguration config)
+        public static IServiceCollection AddSemanticKernelAgent(this IServiceCollection services, IConfiguration config)
         {
-            string providerName = config["LLM:Provider"] ?? "Ollama";
+            var kernelBuilder = services.AddKernel();
 
+            string providerName = config["LLM:Provider"] ?? "Ollama";
+            
             ILLMProvider provider = providerName switch
             {
                 "Ollama" => new OllamaProvider(),
                 "Mock" => new MockProvider(),
-                _ => throw new InvalidOperationException($"Неизвестный LLM-провайдер: {providerName}. Доступные: Ollama, Mock.")
+                _ => throw new InvalidOperationException($"Неизвестный провайдер: {providerName}")
             };
 
-            provider.Register(services, config);
+            provider.Register(kernelBuilder, config);
+
+            kernelBuilder.Plugins
+                .AddFromType<MoviePlugin>()
+                .AddFromType<WebSearchPlugin>()
+                .AddFromType<CalendarPlugin>();
 
             return services;
         }

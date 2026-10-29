@@ -1,12 +1,12 @@
 ﻿namespace Domain
 {
-    public class Movie
-    {
-        public int Id { get; set; }
-        public string Title { get; set; }
-        public int Year { get; set; }
-        public string ImdbId { get; set; }
-        public float Rating {  get; set; }
-        public List<MovieLink> Links { get; set; } = [];
-    }
+    public sealed record Movie(
+        int Id,
+        string Title,
+        int Year,
+        float Rating,
+        string? Description,
+        string? PosterUrl,
+        int? DurationMinutes,
+        IReadOnlyList<string> Genres);
 }

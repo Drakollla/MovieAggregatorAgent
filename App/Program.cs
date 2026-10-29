@@ -24,15 +24,20 @@ TaskScheduler.UnobservedTaskException += (sender, args) =>
 
 try
 {
-    var builder = Host.CreateApplicationBuilder(args);
+    var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+    {
+        Args = args,
+        ContentRootPath = AppContext.BaseDirectory
+    });
 
     builder.Services.AddSerilog();
     builder.Configuration.AddUserSecrets<Program>();
     builder.Services.AddApplicationServices(builder.Configuration);
-    builder.Services.AddKernelWithProvider(builder.Configuration);
+    builder.Services.AddSemanticKernelAgent(builder.Configuration);
     builder.Services.AddHostedService<ConsoleChatService>();
 
     var host = builder.Build();
+
     await host.RunAsync();
 }
 finally

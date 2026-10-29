@@ -1,4 +1,5 @@
 using Contracts;
+using Domain;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
 using System.Text;
@@ -21,24 +22,19 @@ namespace MovieAgentCLI.Plugins
 
         [KernelFunction]
         [Description("Get detailed information about a specific movie from Kinopoisk.")]
-        public async Task<string> SearchMovie([Description("Movie title")] string query)
+        public async Task<string> SearchMovie(
+            [Description("Movie title")] string query,
+            CancellationToken cancellationToken = default)
         {
             query = ExtractQueryFromJsonFallback(query);
 
-            string json = await _movieService.SearchMovieAsync(query);
-            using var doc = JsonDocument.Parse(json);
+            var movies = await _movieService.SearchMoviesAsync(query, cancellationToken);
+            var movie = movies.FirstOrDefault();
 
-            if (doc.RootElement.TryGetProperty("error", out var errorProp))
-                return $"Ошибка базы: {errorProp.GetString()}";
-
-            var bestMatch = GetBestMovieMatch(doc.RootElement, query);
-
-            if (!bestMatch.HasValue)
+            if (movie is null)
                 return "Фильм не найден.";
 
-            var (name, year, rating, description, kpId) = ExtractMovieInfo(bestMatch.Value);
-
-            return $"Название: {name} ({year}). Рейтинг: {rating}. Сюжет: {description}. Ссылка: {KinopoiskBaseUrl}{kpId}/\n[MOVIE:{kpId}]";
+            return $"Название: {movie.Title} ({movie.Year}). Рейтинг: {movie.Rating}. Сюжет: {TruncateDescription(movie.Description)}. Ссылка: {KinopoiskBaseUrl}{movie.Id}/\n[MOVIE:{movie.Id}]";
         }
 
         [KernelFunction]
@@ -48,49 +44,82 @@ namespace MovieAgentCLI.Plugins
             [Description("Start year (e.g., 1990)")] int? yearFrom = null,
             [Description("End year (e.g., 1999)")] int? yearTo = null,
             [Description("Minimum rating from 1 to 10 (e.g., 7.5)")] float? ratingMin = null,
-            [Description("Keywords for plot search")] string? keyword = null)
+            [Description("Keywords for plot search")] string? keyword = null,
+            CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrEmpty(genre) && !yearFrom.HasValue &&
-                !yearTo.HasValue && !ratingMin.HasValue &&
-                string.IsNullOrEmpty(keyword))
+            var requiredGenres = ParseGenres(genre);
+
+            if (requiredGenres.Count == 0 && !yearFrom.HasValue && !yearTo.HasValue &&
+                !ratingMin.HasValue && string.IsNullOrEmpty(keyword))
             {
                 return "Ошибка: Укажите хотя бы один критерий поиска.";
             }
 
-            string json = await _movieService.SearchByCriteriaAsync(genre, yearFrom, yearTo, ratingMin, keyword);
-            using var doc = JsonDocument.Parse(json);
+            var criteria = new MovieSearchCriteria
+            {
+                Genres = requiredGenres,
+                YearFrom = yearFrom,
+                YearTo = yearTo,
+                RatingMin = ratingMin,
+                Keyword = keyword
+            };
 
-            if (doc.RootElement.TryGetProperty("error", out var errorProp))
-                return $"Ошибка базы: {errorProp.GetString()}";
+            var movies = await _movieService.SearchByCriteriaAsync(criteria, cancellationToken);
 
-            if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.GetArrayLength() == 0)
+            if (movies.Count == 0)
                 return "По вашим критериям ничего не найдено в базе.";
 
-            return BuildCriteriaResponse(docs, ParseGenres(genre));
+            return BuildCriteriaResponse(movies, requiredGenres);
         }
 
         [KernelFunction]
         [Description("Find movies similar to a specific movie. Use this when the user asks 'recommend something similar to...'")]
-        public async Task<string> FindSimilar([Description("Movie title")] string movieTitle)
+        public async Task<string> FindSimilar(
+            [Description("Movie title")] string movieTitle,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                var (sourceMovie, sourceId, sourceName, sourceYear) = await GetBaseMovieAsync(movieTitle);
+                var sourceMovies = await _movieService.SearchMoviesAsync(movieTitle, cancellationToken);
+                var source = sourceMovies.FirstOrDefault();
 
-                if (sourceMovie == null)
+                if (source is null)
                     return $"Фильм с названием «{movieTitle}» не найден. Попробуйте уточнить название.";
 
-                string fullMovieJson = await _movieService.GetMovieByIdAsync(sourceId);
-                using var fullDoc = JsonDocument.Parse(fullMovieJson);
-                var fullRoot = fullDoc.RootElement;
+                var fullMovie = await _movieService.GetMovieAsync(source.Id, cancellationToken);
 
-                if (fullRoot.TryGetProperty("error", out var errorProp))
-                    return $"Ошибка базы: {errorProp.GetString()}";
+                if (fullMovie is null)
+                    return $"Фильм с названием «{movieTitle}» не найден. Попробуйте уточнить название.";
 
-                if (!fullRoot.TryGetProperty("similarMovies", out var similarMovies) || similarMovies.GetArrayLength() == 0)
-                    return $"К сожалению, для фильма «{sourceName}» ({sourceYear}) Кинопоиск не предоставляет список похожих.";
+                if (fullMovie.Genres.Count == 0)
+                    return $"Не удалось определить жанр фильма «{fullMovie.Title}».";
 
-                return BuildSimilarResponse(similarMovies, fullRoot, sourceName, sourceYear);
+                int yearFrom = fullMovie.Year > 0 ? fullMovie.Year - 5 : 0;
+                int yearTo = fullMovie.Year > 0 ? fullMovie.Year + 5 : DateTime.Now.Year;
+
+                var criteria = new MovieSearchCriteria
+                {
+                    Genres = fullMovie.Genres,
+                    YearFrom = yearFrom,
+                    YearTo = yearTo
+                };
+
+                var candidates = await _movieService.SearchByCriteriaAsync(criteria, cancellationToken);
+
+                var selected = candidates
+                    .Where(m => m.Id != fullMovie.Id)
+                    .OrderBy(_ => Random.Shared.Next())
+                    .Take(MaxResults)
+                    .ToList();
+
+                if (selected.Count == 0)
+                    return $"Похожих фильмов на «{fullMovie.Title}» ({fullMovie.Year}) не найдено.";
+
+                return BuildSimilarResponse(selected, fullMovie.Title, fullMovie.Year);
+            }
+            catch (MovieServiceException ex)
+            {
+                return $"Ошибка базы: {ex.Message}";
             }
             catch (Exception ex)
             {
@@ -100,30 +129,26 @@ namespace MovieAgentCLI.Plugins
 
         [KernelFunction]
         [Description("Get detailed movie information by Kinopoisk ID.")]
-        public async Task<string> GetMovieDetails([Description("Kinopoisk movie ID")] int movieId)
+        public async Task<string> GetMovieDetails(
+            [Description("Kinopoisk movie ID")] int movieId,
+            CancellationToken cancellationToken = default)
         {
             try
             {
-                string json = await _movieService.GetMovieByIdAsync(movieId);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
+                var movie = await _movieService.GetMovieAsync(movieId, cancellationToken);
 
-                if (root.TryGetProperty("error", out var errorProp))
-                    return $"Ошибка базы: {errorProp.GetString()}";
+                if (movie is null)
+                    return "Фильм не найден.";
 
-                var name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "Без названия" : "Без названия";
-                var year = root.TryGetProperty("year", out var y) ? y.GetInt32() : 0;
-                var rating = root.TryGetProperty("rating", out var r) && r.TryGetProperty("kp", out var kp) ? (float)kp.GetDouble() : 0;
-                var description = root.TryGetProperty("description", out var d) ? d.GetString() ?? "Нет описания" : "Нет описания";
-
-                if (description.Length > MaxDescriptionLength)
-                    description = description[..MaxDescriptionLength] + "... (сюжет обрезан)";
-
-                var genres = root.TryGetProperty("genres", out var g)
-                    ? string.Join(", ", g.EnumerateArray().Select(x => x.TryGetProperty("name", out var gn) ? gn.GetString() ?? "" : "").Where(x => !string.IsNullOrEmpty(x)))
+                string genres = movie.Genres.Count > 0
+                    ? string.Join(", ", movie.Genres)
                     : "Неизвестно";
 
-                return $" {name} ({year})\n⭐ Рейтинг: {rating:F1}\n Жанры: {genres}\n📝 Сюжет: {description}\n🔗 {KinopoiskBaseUrl}{movieId}/\n[MOVIE:{movieId}]";
+                return $" {movie.Title} ({movie.Year})\n⭐ Рейтинг: {movie.Rating:F1}\n Жанры: {genres}\n📝 Сюжет: {TruncateDescription(movie.Description)}\n🔗 {KinopoiskBaseUrl}{movie.Id}/\n[MOVIE:{movie.Id}]";
+            }
+            catch (MovieServiceException ex)
+            {
+                return $"Ошибка базы: {ex.Message}";
             }
             catch (Exception ex)
             {
@@ -133,117 +158,36 @@ namespace MovieAgentCLI.Plugins
 
         #region Helpers
 
-        private async Task<(JsonElement? element, int id, string name, int year)> GetBaseMovieAsync(string title)
-        {
-            string searchJson = await _movieService.SearchMovieAsync(title);
-            using var searchDoc = JsonDocument.Parse(searchJson);
-            var match = GetBestMovieMatch(searchDoc.RootElement, title);
-
-            if (!match.HasValue)
-                return (null, 0, string.Empty, 0);
-
-            var element = match.Value;
-            var (name, year, _, _, kpId) = ExtractMovieInfo(element);
-
-            return (element, kpId, name, year);
-        }
-
         private static List<string> ParseGenres(string? genreInput)
         {
             if (string.IsNullOrWhiteSpace(genreInput))
                 return [];
 
             return genreInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                             .Select(g => g.ToLower())
+                             .Select(g => g.ToLowerInvariant())
                              .ToList();
         }
 
-        private static bool HasAllGenres(JsonElement movie, List<string> requiredGenres)
+        private static bool HasAllGenres(Movie movie, List<string> requiredGenres)
         {
-            var movieGenres = movie.TryGetProperty("genres", out var gProp)
-                ? gProp.EnumerateArray().Select(g => g.TryGetProperty("name", out var n)
-                    ? n.GetString()?.ToLower() ?? "" : "").ToList()
-                : [];
+            if (requiredGenres.Count == 0)
+                return true;
+
+            var movieGenres = movie.Genres
+                .Select(g => g.ToLowerInvariant())
+                .ToHashSet();
 
             return requiredGenres.All(movieGenres.Contains);
         }
 
-        private static HashSet<int> ExtractFranchiseIds(JsonElement fullRoot)
+        private static string TruncateDescription(string? description)
         {
-            var ids = new HashSet<int>();
+            if (string.IsNullOrWhiteSpace(description))
+                return "Нет описания";
 
-            if (fullRoot.TryGetProperty("sequelsAndPrequels", out var sequels))
-            {
-                foreach (var seq in sequels.EnumerateArray())
-                {
-                    if (seq.TryGetProperty("id", out var seqId))
-                        ids.Add(seqId.GetInt32());
-                }
-            }
-
-            return ids;
-        }
-
-        private static string GetBaseFranchiseName(string movieName)
-        {
-            string baseName = movieName.Split(':')[0].Trim().ToLower();
-            int andIndex = baseName.IndexOf(" и ");
-
-            return andIndex > 0 ? baseName[..andIndex].Trim() : baseName;
-        }
-
-        private static bool IsDuplicateOrFranchise(JsonElement similarMovie,
-            HashSet<int> franchiseIds,
-            string sourceBaseName,
-            HashSet<string> seenFranchises,
-            out string name, out int kpId)
-        {
-            kpId = similarMovie.TryGetProperty("id", out var idProp) ? idProp.GetInt32() : 0;
-            name = similarMovie.TryGetProperty("name", out var n) ?
-                n.GetString() ?? "Без названия" : "Без названия";
-
-            string lowerName = name.ToLower();
-
-            if (franchiseIds.Contains(kpId) ||
-                lowerName.Contains(sourceBaseName) ||
-                sourceBaseName.Contains(lowerName))
-                return true;
-
-            string recBaseName = GetBaseFranchiseName(lowerName);
-
-            if (!seenFranchises.Add(recBaseName))
-                return true;
-
-            return false;
-        }
-
-        private static JsonElement? GetBestMovieMatch(JsonElement root, string originalQuery)
-        {
-            if (root.TryGetProperty("error", out _) ||
-                !root.TryGetProperty("docs", out var docs) ||
-                docs.GetArrayLength() == 0)
-                return null;
-
-            string lowerQuery = originalQuery.ToLower().Trim();
-
-            return docs.EnumerateArray()
-                .OrderByDescending(x => (x.TryGetProperty("name", out var nameProp) ? nameProp.GetString()?.ToLower() ?? "" : "") == lowerQuery ? 1 : 0)
-                .ThenByDescending(x => x.TryGetProperty("votes", out var v) && v.TryGetProperty("kp", out var kp) ? kp.GetInt32() : 0)
-                .FirstOrDefault();
-        }
-
-        private static (string name, int year, float rating, string description, int kpId) ExtractMovieInfo(JsonElement element)
-        {
-            var name = element.TryGetProperty("name", out var n) ? n.GetString() ?? "Без названия" : "Без названия";
-            var year = element.TryGetProperty("year", out var y) ? y.GetInt32() : 0;
-            var rating = element.TryGetProperty("rating", out var r) && r.TryGetProperty("kp", out var kp) ? (float)kp.GetDouble() : 0;
-            var description = element.TryGetProperty("description", out var d) ? d.GetString() ?? "Нет описания" : "Нет описания";
-            var kpId = element.TryGetProperty("id", out var id) ? id.GetInt32() : 0;
-
-            if (description.Length > MaxDescriptionLength)
-                description = description[..MaxDescriptionLength] + "... (сюжет обрезан)";
-
-            return (name, year, rating, description, kpId);
+            return description.Length > MaxDescriptionLength
+                ? description[..MaxDescriptionLength] + "... (сюжет обрезан)"
+                : description;
         }
 
         private static string ExtractQueryFromJsonFallback(string query)
@@ -261,97 +205,70 @@ namespace MovieAgentCLI.Plugins
                 if (qDoc.RootElement.TryGetProperty("query", out var q))
                     return q.GetString() ?? query;
             }
-            catch { }
+            catch
+            {
+            }
 
             return query;
         }
 
-        private static string BuildCriteriaResponse(JsonElement docs, List<string> requiredGenres)
+        private static string BuildCriteriaResponse(IReadOnlyList<Movie> movies, List<string> requiredGenres)
         {
+            var selected = movies
+                .Where(m => HasAllGenres(m, requiredGenres))
+                .OrderBy(_ => Random.Shared.Next())
+                .Take(MaxResults)
+                .ToList();
+
             var output = new StringBuilder();
             var movieIds = new List<int>();
-            int count = 0;
 
-            var rnd = new Random();
-            var shuffledDocs = docs.EnumerateArray().OrderBy(x => rnd.Next()).ToList();
-
-            foreach (var element in shuffledDocs)
+            foreach (var movie in selected)
             {
-                if (requiredGenres.Count > 0 && !HasAllGenres(element, requiredGenres))
-                    continue;
-
-                var (_, _, _, _, kpId) = ExtractMovieInfo(element);
-                movieIds.Add(kpId);
-                AppendFormattedMovie(output, element);
-
-                if (++count >= MaxResults)
-                    break;
+                movieIds.Add(movie.Id);
+                AppendFormattedMovie(output, movie);
             }
 
-            var result = count > 0 ? output.ToString() : "По вашим критериям (с учетом проверки жанров) ничего не найдено в базе.";
-            
+            var result = selected.Count > 0
+                ? output.ToString()
+                : "По вашим критериям (с учетом проверки жанров) ничего не найдено в базе.";
+
             if (movieIds.Count > 0)
                 result += $"\n[MOVIES:{string.Join(",", movieIds)}]";
-            
+
             return result;
         }
 
-        private static void AppendFormattedMovie(StringBuilder output, JsonElement element)
+        private static void AppendFormattedMovie(StringBuilder output, Movie movie)
         {
-            var (name, year, rating, description, kpId) = ExtractMovieInfo(element);
-
-            output.AppendLine($"Название: {name} ({year})");
-            output.AppendLine($"Рейтинг: {rating:F1}");
-            output.AppendLine($"Сюжет: {description}");
-            output.AppendLine($"Ссылка: {KinopoiskBaseUrl}{kpId}/");
+            output.AppendLine($"Название: {movie.Title} ({movie.Year})");
+            output.AppendLine($"Рейтинг: {movie.Rating:F1}");
+            output.AppendLine($"Сюжет: {TruncateDescription(movie.Description)}");
+            output.AppendLine($"Ссылка: {KinopoiskBaseUrl}{movie.Id}/");
             output.AppendLine();
         }
 
-        private static string BuildSimilarResponse(JsonElement similarMovies, JsonElement fullRoot, string sourceName, int sourceYear)
+        private static string BuildSimilarResponse(IReadOnlyList<Movie> movies, string sourceName, int sourceYear)
         {
-            var franchiseIds = ExtractFranchiseIds(fullRoot);
-            string baseName = GetBaseFranchiseName(sourceName);
-            var seenFranchises = new HashSet<string>();
+            var output = new StringBuilder($"Похожие фильмы на «{sourceName}» ({sourceYear}):\n\n");
             var movieIds = new List<int>();
-
-            var output = new StringBuilder($"Рекомендации Кинопоиска! Фильмы в духе «{sourceName}» ({sourceYear}):\n\n");
             int count = 0;
 
-            foreach (var movie in similarMovies.EnumerateArray())
+            foreach (var movie in movies)
             {
-                if (IsDuplicateOrFranchise(movie, franchiseIds, baseName, seenFranchises, out string name, out int kpId))
-                    continue;
-
-                movieIds.Add(kpId);
-                AppendFormattedSimilarMovie(output, movie, name, kpId, ref count);
-
-                if (count >= MaxResults)
-                    break;
+                movieIds.Add(movie.Id);
+                count++;
+                output.AppendLine($"{count}. {movie.Title} ({movie.Year}) ⭐{movie.Rating:F1}");
+                output.AppendLine($"   {TruncateDescription(movie.Description)}");
+                output.AppendLine($"   🔗 {KinopoiskBaseUrl}{movie.Id}/");
+                output.AppendLine();
             }
 
-            var result = count > 0 ? output.ToString() : $"Для фильма «{sourceName}» не нашлось независимых похожих фильмов.";
-            
+            var result = output.ToString();
             if (movieIds.Count > 0)
                 result += $"\n[MOVIES:{string.Join(",", movieIds)}]";
-            
+
             return result;
-        }
-
-        private static void AppendFormattedSimilarMovie(StringBuilder output,
-            JsonElement movie, string name,
-            int kpId, ref int count)
-        {
-            count++;
-
-            string yearStr = movie.TryGetProperty("year", out var yearProp) ?
-                $" ({yearProp.GetInt32()})" : "";
-
-            output.AppendLine($"{count}. {name}{yearStr}");
-
-            if (kpId > 0)
-                output.AppendLine($"   Где смотреть: {KinopoiskBaseUrl}{kpId}/");
-
-            output.AppendLine();
         }
 
         #endregion
