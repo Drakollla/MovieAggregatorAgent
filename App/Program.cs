@@ -24,7 +24,11 @@ TaskScheduler.UnobservedTaskException += (sender, args) =>
 
 try
 {
-    var builder = Host.CreateApplicationBuilder(args);
+    var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+    {
+        Args = args,
+        ContentRootPath = AppContext.BaseDirectory
+    });
 
     builder.Services.AddSerilog();
     builder.Configuration.AddUserSecrets<Program>();
