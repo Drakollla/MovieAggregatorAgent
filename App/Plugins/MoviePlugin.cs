@@ -34,7 +34,7 @@ namespace MovieAgentCLI.Plugins
             if (movie is null)
                 return "Фильм не найден.";
 
-            return $"Название: {movie.Title} ({movie.Year}). Рейтинг: {movie.Rating}. Сюжет: {TruncateDescription(movie.Description)}. Ссылка: {KinopoiskBaseUrl}{movie.Id}/\n[MOVIE:{movie.Id}]";
+            return $"Название: {movie.Title} ({movie.Year}). Рейтинг: {movie.Rating:F1}. Сюжет: {TruncateDescription(movie.Description)}. Ссылка: {KinopoiskBaseUrl}{movie.Id}/\n[MOVIE:{movie.Id}]";
         }
 
         [KernelFunction]
